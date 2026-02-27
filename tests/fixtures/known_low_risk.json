@@ -1,0 +1,12 @@
+[
+  {
+    "text": "An adult patient was treated and later discharged.",
+    "expected_max_score": 0.05,
+    "expected_rating": "LOW"
+  },
+  {
+    "text": "A group of workers attended a safety briefing.",
+    "expected_max_score": 0.05,
+    "expected_rating": "LOW"
+  }
+]

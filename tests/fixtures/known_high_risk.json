@@ -1,0 +1,12 @@
+[
+  {
+    "text": "Jane Doe, age 34, email jane.doe@example.com, works at Acme Labs in SW1A 1AA.",
+    "expected_min_score": 0.95,
+    "expected_rating": "CRITICAL"
+  },
+  {
+    "text": "The 34-year-old female marine biologist from SW1A 1AA has diabetes.",
+    "expected_min_score": 0.15,
+    "expected_rating": "MEDIUM"
+  }
+]

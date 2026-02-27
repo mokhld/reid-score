@@ -1,0 +1,26 @@
+state_of_residence,gender,date_of_birth,race,marital_status,education_level,employment_status,occupation,citizenship_status
+California,Female,September 29, 1994,White,Divorced,Bachelor's degree,Employed,Mechanical engineers,Born in the U.S.
+California,Male,January 2, 1987,White,Married,Bachelor's degree,Employed,Software developers,Born in the U.S.
+New York,Female,July 11, 1990,Black,Single,Master's degree,Employed,Teachers,Born in the U.S.
+Texas,Male,March 18, 1982,White,Married,High school,Employed,Truck drivers,Born in the U.S.
+Florida,Female,November 4, 1979,Asian,Married,Bachelor's degree,Unemployed,Nurses,Naturalized citizen
+Illinois,Male,May 14, 1993,White,Single,Bachelor's degree,Employed,Lawyers,Born in the U.S.
+Washington,Female,December 30, 1988,Black,Divorced,Master's degree,Employed,Journalists,Born in the U.S.
+California,Male,August 9, 1996,White,Single,Associate degree,Employed,Sales representatives,Born in the U.S.
+New York,Male,February 5, 1975,White,Married,Bachelor's degree,Employed,Mechanical engineers,Born in the U.S.
+Texas,Female,June 21, 1984,Hispanic,Married,High school,Employed,Accountants,Born in the U.S.
+Florida,Male,October 1, 1991,Black,Single,Bachelor's degree,Employed,Teachers,Born in the U.S.
+Illinois,Female,April 25, 1986,White,Divorced,Master's degree,Unemployed,Nurses,Born in the U.S.
+Washington,Male,September 3, 1992,Asian,Married,Bachelor's degree,Employed,Mechanical engineers,Naturalized citizen
+California,Female,January 12, 1989,White,Single,Doctorate,Employed,Scientists,Born in the U.S.
+New York,Female,May 7, 1981,White,Married,Bachelor's degree,Employed,Lawyers,Born in the U.S.
+Texas,Male,July 19, 1978,Black,Divorced,High school,Unemployed,Drivers,Born in the U.S.
+Florida,Female,March 27, 1995,White,Single,Bachelor's degree,Employed,Software developers,Born in the U.S.
+Illinois,Male,December 8, 1983,Hispanic,Married,Master's degree,Employed,Teachers,Naturalized citizen
+Washington,Female,June 15, 1997,Asian,Single,Associate degree,Employed,Nurses,Born in the U.S.
+California,Male,February 20, 1980,White,Married,Bachelor's degree,Employed,Mechanical engineers,Born in the U.S.
+New York,Male,October 10, 1998,Black,Single,Bachelor's degree,Employed,Journalists,Born in the U.S.
+Texas,Female,April 2, 1999,White,Single,High school,Employed,Retail workers,Born in the U.S.
+Florida,Male,August 14, 1985,White,Married,Bachelor's degree,Employed,Doctors,Born in the U.S.
+Illinois,Female,November 23, 1990,Asian,Married,Master's degree,Employed,Software developers,Naturalized citizen
+Washington,Male,January 31, 1988,White,Divorced,Bachelor's degree,Unemployed,Mechanical engineers,Born in the U.S.
