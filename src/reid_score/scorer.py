@@ -95,6 +95,9 @@ class ReidScorer:
             "total": len(results),
         }
 
+    SUPPORTED_STANDARDS = ("gdpr", "hipaa", "ccpa")
+    SUPPORTED_FORMATS = ("json", "html", "pdf")
+
     def generate_report(
         self,
         results: list[ScoreResult],
@@ -102,23 +105,33 @@ class ReidScorer:
         format: str = "json",
         output_path: str | None = None,
     ) -> bytes | dict[str, Any] | str:
+        std = standard.lower()
+        if std not in self.SUPPORTED_STANDARDS:
+            raise ValueError(
+                f"Unsupported standard: {standard!r}. "
+                f"Expected one of {self.SUPPORTED_STANDARDS}."
+            )
+        if format not in self.SUPPORTED_FORMATS:
+            raise ValueError(
+                f"Unsupported report format: {format!r}. "
+                f"Expected one of {self.SUPPORTED_FORMATS}."
+            )
+
         summary = self.summarize(results)
         details = [r.to_dict() for r in results]
 
         if format == "json":
-            payload = {"summary": summary, "results": details, "standard": standard.upper()}
+            payload = {"summary": summary, "results": details, "standard": std.upper()}
             if output_path:
                 Path(output_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
             return payload
 
-        if standard.lower() == "gdpr":
+        if std == "gdpr":
             body = render_gdpr(summary, details)
-        elif standard.lower() == "hipaa":
+        elif std == "hipaa":
             body = render_hipaa(summary, details)
-        elif standard.lower() == "ccpa":
+        else:  # ccpa — validated above
             body = render_ccpa(summary, details)
-        else:
-            raise ValueError(f"Unsupported standard: {standard}")
 
         if format == "html":
             # Escape the report body for HTML context. Details may contain
@@ -146,13 +159,11 @@ class ReidScorer:
                 Path(output_path).write_text(html_doc, encoding="utf-8")
             return html_doc
 
-        if format == "pdf":
-            pdf = _basic_pdf(body)
-            if output_path:
-                Path(output_path).write_bytes(pdf)
-            return pdf
-
-        raise ValueError(f"Unsupported report format: {format}")
+        # format == "pdf" — validated above
+        pdf = _basic_pdf(body)
+        if output_path:
+            Path(output_path).write_bytes(pdf)
+        return pdf
 
 
 def _basic_pdf(text: str) -> bytes:

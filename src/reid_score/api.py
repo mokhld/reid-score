@@ -51,8 +51,16 @@ def handle_report_request(scorer: ReidScorer, payload: dict[str, Any]) -> dict[s
     if not texts:
         raise ValueError("Each result item must include a 'text' field")
 
-    standard = str(payload.get("standard", "gdpr"))
-    fmt = str(payload.get("format", "json"))
+    standard = str(payload.get("standard", "gdpr")).lower()
+    if standard not in ReidScorer.SUPPORTED_STANDARDS:
+        raise ValueError(
+            f"'standard' must be one of {list(ReidScorer.SUPPORTED_STANDARDS)}"
+        )
+    fmt = str(payload.get("format", "json")).lower()
+    if fmt not in ReidScorer.SUPPORTED_FORMATS:
+        raise ValueError(
+            f"'format' must be one of {list(ReidScorer.SUPPORTED_FORMATS)}"
+        )
     scored = scorer.score_batch(texts)
     report = scorer.generate_report(scored, standard=standard, format=fmt)
 

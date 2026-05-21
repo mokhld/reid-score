@@ -70,6 +70,17 @@ class ReidScorerIntegrationTests(unittest.TestCase):
         self.assertIn(result.rating, {Rating.MEDIUM, Rating.HIGH, Rating.CRITICAL})
         self.assertGreaterEqual(len(result.recommendations), 1)
 
+    def test_generate_report_rejects_unknown_standard_for_json(self) -> None:
+        results = [self.gb.score("A patient was discharged.")]
+        with self.assertRaises(ValueError) as ctx:
+            self.gb.generate_report(results, standard="iso27001", format="json")
+        self.assertIn("standard", str(ctx.exception).lower())
+
+    def test_generate_report_rejects_unknown_format(self) -> None:
+        results = [self.gb.score("A patient was discharged.")]
+        with self.assertRaises(ValueError):
+            self.gb.generate_report(results, standard="gdpr", format="xml")
+
     def test_html_report_escapes_attacker_controlled_content(self) -> None:
         # Construct a ScoreResult carrying HTML-breakout payloads in fields
         # that flow into the rendered report (recommendations are rendered

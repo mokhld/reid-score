@@ -120,6 +120,30 @@ class APIHTTPTests(unittest.TestCase):
         self.assertEqual(400, status)
         self.assertEqual("Invalid JSON payload", json.loads(body)["error"])
 
+    def test_report_rejects_unknown_standard(self) -> None:
+        body = json.dumps(
+            {
+                "results": [{"text": "A patient was discharged."}],
+                "standard": "iso27001",
+                "format": "json",
+            }
+        ).encode("utf-8")
+        status, resp = self._post("/v1/report", body=body)
+        self.assertEqual(422, status)
+        self.assertIn("standard", json.loads(resp)["error"])
+
+    def test_report_rejects_unknown_format(self) -> None:
+        body = json.dumps(
+            {
+                "results": [{"text": "A patient was discharged."}],
+                "standard": "gdpr",
+                "format": "xml",
+            }
+        ).encode("utf-8")
+        status, resp = self._post("/v1/report", body=body)
+        self.assertEqual(422, status)
+        self.assertIn("format", json.loads(resp)["error"])
+
     def test_internal_error_does_not_leak_exception_text(self) -> None:
         # Force an unexpected exception by monkey-patching the shared scorer
         # to raise something non-ValueError on score().
