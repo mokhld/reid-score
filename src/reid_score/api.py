@@ -10,6 +10,8 @@ from typing import Any
 
 from reid_score.scorer import ReidScorer
 
+MAX_REQUEST_BYTES = 1 * 1024 * 1024  # 1 MiB
+
 
 def handle_score_request(scorer: ReidScorer, payload: dict[str, Any]) -> dict[str, Any]:
     text = str(payload.get("text", "")).strip()
@@ -76,6 +78,19 @@ class ReidAPIHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         try:
             length = int(self.headers.get("Content-Length", "0"))
+        except (TypeError, ValueError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid Content-Length"})
+            return
+        if length < 0:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid Content-Length"})
+            return
+        if length > MAX_REQUEST_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": f"Request body exceeds {MAX_REQUEST_BYTES} bytes"},
+            )
+            return
+        try:
             data = self.rfile.read(length) if length > 0 else b"{}"
             payload = json.loads(data.decode("utf-8"))
         except Exception:
