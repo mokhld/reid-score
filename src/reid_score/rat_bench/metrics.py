@@ -43,7 +43,15 @@ def recall_by_attribute(
 
 
 def bleu_score(reference: str, candidate: str, max_order: int = 4) -> float:
-    """Compute sentence-level BLEU with brevity penalty and smoothing."""
+    """Compute sentence-level BLEU with brevity penalty and add-1 smoothing.
+
+    Uses Laplace (add-1) smoothing on each n-gram precision so the log-sum
+    never underflows on zero matches. This is one of the standard smoothing
+    methods discussed in Chen & Cherry (2014) "A Systematic Comparison of
+    Smoothing Techniques for Sentence-Level BLEU" and is suitable for short
+    sentence-level comparisons where higher-order n-grams routinely have
+    zero overlap.
+    """
     ref_tokens = reference.split()
     cand_tokens = candidate.split()
     if not ref_tokens or not cand_tokens:
@@ -55,6 +63,7 @@ def bleu_score(reference: str, candidate: str, max_order: int = 4) -> float:
         cand_ngrams = Counter(tuple(cand_tokens[i : i + n]) for i in range(len(cand_tokens) - n + 1))
         overlap = sum(min(count, ref_ngrams[gram]) for gram, count in cand_ngrams.items())
         total = max(1, sum(cand_ngrams.values()))
+        # add-1 smoothing — see docstring.
         precisions.append((overlap + 1) / (total + 1))
 
     log_prec = sum(math.log(p) for p in precisions) / max_order
