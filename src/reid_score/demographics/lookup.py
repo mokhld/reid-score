@@ -38,17 +38,29 @@ class DemographicLookup:
         return base / "us" / "acs_2024.sqlite"
 
     def query_count(self, filters: dict[str, str]) -> int:
-        """Return count of population matching all known filters."""
+        """Return count of population matching all known filters.
+
+        Compare both sides case-insensitively and after stripping whitespace.
+        Without this, an LLM-supplied value like ``"Female"`` or `" SW "`
+        silently misses every row and the caller gets the smoothed floor
+        (population = 1, uniqueness = 1.0), which presents as a maximally
+        risky score. The bundled cross-tabs are mixed-case (postcode
+        districts are uppercase, other columns lowercase), so we normalise
+        column values via SQL ``LOWER()`` rather than assuming a casing.
+        """
         clauses = ["geography = ?"]
         values = [self.geography]
 
         for key, value in filters.items():
             if key not in self.ALLOWED_COLUMNS:
                 continue
-            if not value or value.lower() == "unknown":
+            if value is None:
                 continue
-            clauses.append(f"{key} = ?")
-            values.append(value)
+            normalised = str(value).strip().lower()
+            if not normalised or normalised == "unknown":
+                continue
+            clauses.append(f"LOWER({key}) = ?")
+            values.append(normalised)
 
         query = "SELECT SUM(count) FROM cross_tab WHERE " + " AND ".join(clauses)
         with closing(sqlite3.connect(self.db_path)) as conn:

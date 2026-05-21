@@ -31,6 +31,20 @@ class DemographicLookupTests(unittest.TestCase):
         )
         self.assertEqual(1, count)
 
+    def test_query_normalises_mixed_case_and_whitespace(self) -> None:
+        # Values arriving from LLM providers may be capitalised or padded.
+        # The bundled cross-tabs are lowercase, so these would silently miss
+        # and fall back to the smoothed floor without normalisation.
+        lookup = DemographicLookup(geography="US")
+        baseline = lookup.query_count(
+            {"age_range": "30-39", "gender": "female", "occupation": "marine_biologist"}
+        )
+        mixed = lookup.query_count(
+            {"age_range": " 30-39 ", "gender": "Female", "occupation": "MARINE_BIOLOGIST"}
+        )
+        self.assertEqual(baseline, mixed)
+        self.assertGreater(mixed, 1)  # would be 1 (floor) without normalisation
+
 
 class UniquenessTests(unittest.TestCase):
     def test_uniqueness_with_threshold(self) -> None:
