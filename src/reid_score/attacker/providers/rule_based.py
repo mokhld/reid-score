@@ -174,6 +174,9 @@ class RuleBasedProvider(AttackerProvider):
                 }
             )
 
+        # Emit at most one medical_conditions entry — the parser dedupes by
+        # attribute name and keeps only the highest-confidence value, so
+        # appending multiple here would silently discard all but one anyway.
         for condition in ["diabetes", "cancer", "depression", "asthma"]:
             if condition in lower:
                 inferred.append(
@@ -185,6 +188,7 @@ class RuleBasedProvider(AttackerProvider):
                         "category": "contextual",
                     }
                 )
+                break
 
         if not inferred:
             inferred.append(

@@ -72,9 +72,11 @@ class AttributeParser:
     def _normalize_category(cls, attribute: str, value: Any) -> str:
         expected = CATEGORY_MAP[attribute]
         category = str(value).strip().lower()
-        if category in cls._VALID_CATEGORIES and category == expected:
-            return category
-        return expected
+        # `expected` is itself always in _VALID_CATEGORIES (it is one of
+        # direct/quasi/contextual by construction of CATEGORY_MAP), so the
+        # equality check alone is sufficient. Any other value (or junk from
+        # the provider) collapses to the canonical category.
+        return category if category == expected else expected
 
     @classmethod
     def parse(cls, raw: str) -> list[InferredAttribute]:
