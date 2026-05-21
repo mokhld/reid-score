@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import statistics
 import time
@@ -120,15 +121,30 @@ class ReidScorer:
             raise ValueError(f"Unsupported standard: {standard}")
 
         if format == "html":
-            html = (
+            # Escape the report body for HTML context. Details may contain
+            # attacker-controlled text from the input documents (e.g. an
+            # `inferred_value` field carrying `</pre><script>...`), so we
+            # must not embed it raw.
+            safe_body = html.escape(body)
+            # `<script type="application/json">` still terminates on `</script>`
+            # regardless of the type attribute, so escape both angle brackets
+            # and the slash inside any JSON string to prevent tag breakout.
+            data_json = (
+                json.dumps({"summary": summary, "results": details})
+                .replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026")
+                .replace("/", "\\u002f")
+            )
+            html_doc = (
                 "<html><head><meta charset='utf-8'><title>reid-score report</title></head><body>"
-                f"<pre>{body}</pre>"
-                f"<script type='application/json' id='report-data'>{json.dumps({'summary': summary, 'results': details})}</script>"
+                f"<pre>{safe_body}</pre>"
+                f"<script type='application/json' id='report-data'>{data_json}</script>"
                 "</body></html>"
             )
             if output_path:
-                Path(output_path).write_text(html, encoding="utf-8")
-            return html
+                Path(output_path).write_text(html_doc, encoding="utf-8")
+            return html_doc
 
         if format == "pdf":
             pdf = _basic_pdf(body)

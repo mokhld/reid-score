@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reid_score import ReidScorer
-from reid_score.types import Rating
+from reid_score.types import InferredAttribute, Rating, ScoreResult
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -69,6 +69,37 @@ class ReidScorerIntegrationTests(unittest.TestCase):
         result = self.gb.score("age 34 female marine biologist in SW1A 1AA")
         self.assertIn(result.rating, {Rating.MEDIUM, Rating.HIGH, Rating.CRITICAL})
         self.assertGreaterEqual(len(result.recommendations), 1)
+
+    def test_html_report_escapes_attacker_controlled_content(self) -> None:
+        # Construct a ScoreResult carrying HTML-breakout payloads in fields
+        # that flow into the rendered report (recommendations are rendered
+        # into the embedded JSON). The renderer must escape these so they
+        # cannot break out of <pre> or close the <script> tag.
+        evil = "</script><script>alert('xss')</script></pre><b>x</b>"
+        result = ScoreResult(
+            score=0.5,
+            rating=Rating.MEDIUM,
+            direct_identifiers_found=[],
+            inferred_attributes=[
+                InferredAttribute(
+                    attribute="age_range",
+                    value=evil,
+                    confidence=0.5,
+                    evidence=evil,
+                    category="quasi",
+                )
+            ],
+            population_match_estimate=100,
+            geography="GB",
+            recommendations=[evil],
+        )
+        html_report = self.gb.generate_report([result], standard="gdpr", format="html")
+        assert isinstance(html_report, str)
+        self.assertNotIn("</script><script>", html_report)
+        self.assertNotIn("</pre><b>", html_report)
+        self.assertNotIn("<script>alert", html_report)
+        # The payload must appear in escaped form inside the script block.
+        self.assertIn("\\u003c\\u002fscript\\u003e", html_report)
 
     def test_external_provider_without_api_key_raises(self) -> None:
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
