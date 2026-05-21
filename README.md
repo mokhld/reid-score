@@ -51,9 +51,9 @@ from reid_score import ReidScorer
 scorer = ReidScorer(geography="GB")
 
 result = scorer.score("Age 34 female marine biologist in SW1A 1AA, email jane@example.com")
-print(result.score)           # 1.0
-print(result.rating.value)    # CRITICAL
-print(result.recommendations) # ['Redact email addresses...', 'Broaden age...', ...]
+print(result.score)              # 1.0
+print(result.rating.value)       # CRITICAL
+print(result.recommendations[0]) # 'Broaden age into wider buckets (e.g., 20-year range).'
 ```
 
 No API key needed. The default `rule_based` provider runs entirely offline.
