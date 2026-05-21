@@ -4,35 +4,58 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from reid_score.scorer import ReidScorer
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="reid-score", description="Score re-identification risk in text files")
-    parser.add_argument("scan", nargs="?", default="scan", help="scan command")
-    parser.add_argument("inputs", nargs="*", help="Text files to score")
-    parser.add_argument("--geography", default="US", choices=["US", "GB"])
-    parser.add_argument("--provider", default="rule_based")
-    parser.add_argument("--model", default="heuristic-v1")
-    parser.add_argument("--confidence-threshold", type=float, default=0.5)
-    parser.add_argument("--json", action="store_true", help="Print JSON output")
-    parser.add_argument("--report", choices=["gdpr", "hipaa", "ccpa"])
-    parser.add_argument("--report-format", choices=["json", "html", "pdf"], default="json")
-    parser.add_argument("--report-output", help="Write report to file")
+    parser = argparse.ArgumentParser(
+        prog="reid-score",
+        description="Score re-identification risk in text files",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True, metavar="command")
+
+    scan = subparsers.add_parser("scan", help="Score one or more text files")
+    scan.add_argument("inputs", nargs="+", help="Text files to score")
+    scan.add_argument("--geography", default="US", choices=["US", "GB"])
+    scan.add_argument("--provider", default="rule_based")
+    scan.add_argument("--model", default="heuristic-v1")
+    scan.add_argument("--confidence-threshold", type=float, default=0.5)
+    scan.add_argument("--json", action="store_true", help="Print JSON output")
+    scan.add_argument("--report", choices=["gdpr", "hipaa", "ccpa"])
+    scan.add_argument(
+        "--report-format", choices=["json", "html", "pdf"], default="json"
+    )
+    scan.add_argument("--report-output", help="Write report to file")
     return parser
+
+
+def _read_input_files(paths: list[str]) -> list[str]:
+    texts: list[str] = []
+    for path in paths:
+        p = Path(path)
+        try:
+            texts.append(p.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise SystemExit(f"reid-score: cannot read '{path}': file not found")
+        except IsADirectoryError:
+            raise SystemExit(f"reid-score: cannot read '{path}': is a directory")
+        except PermissionError:
+            raise SystemExit(f"reid-score: cannot read '{path}': permission denied")
+        except UnicodeDecodeError as exc:
+            raise SystemExit(
+                f"reid-score: cannot read '{path}': not valid UTF-8 ({exc.reason})"
+            )
+    return texts
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.scan != "scan":
-        parser.error("Only 'scan' command is supported")
-
-    if not args.inputs:
-        parser.error("Please provide at least one input file")
+    texts = _read_input_files(args.inputs)
 
     scorer = ReidScorer(
         llm_provider=args.provider,
@@ -41,7 +64,6 @@ def main() -> int:
         confidence_threshold=args.confidence_threshold,
     )
 
-    texts = [Path(path).read_text(encoding="utf-8") for path in args.inputs]
     results = scorer.score_batch(texts)
 
     if args.json:
@@ -52,7 +74,11 @@ def main() -> int:
         print(json.dumps(payload, indent=2))
     else:
         for idx, result in enumerate(results, start=1):
-            print(f"[{idx}] score={result.score:.3f} rating={result.rating.value} pop={result.population_match_estimate}")
+            print(
+                f"[{idx}] score={result.score:.3f} "
+                f"rating={result.rating.value} "
+                f"pop={result.population_match_estimate}"
+            )
             for rec in result.recommendations[:3]:
                 print(f"  - {rec}")
 
@@ -76,4 +102,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
