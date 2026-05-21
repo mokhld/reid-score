@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ._common import render_per_record_section
+
 
 def render_gdpr(summary: dict[str, float | int], details: list[dict]) -> str:
     ts = datetime.now(timezone.utc).isoformat()
-    return (
+    header = (
         "GDPR Re-identification Risk Assessment\n"
         f"Generated: {ts}\n"
         f"Total records: {summary['total']}\n"
@@ -17,5 +19,5 @@ def render_gdpr(summary: dict[str, float | int], details: list[dict]) -> str:
         "- Re-identification risk scored using uniqueness + direct identifier leakage.\n"
         "- Outputs include mitigation recommendations per record.\n"
         f"- Max score observed: {summary['max_score']:.3f}\n"
-        "\nPer-record details included in attached JSON body.\n"
     )
+    return header + render_per_record_section(details)

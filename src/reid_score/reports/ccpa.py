@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ._common import render_per_record_section
+
 
 def render_ccpa(summary: dict[str, float | int], details: list[dict]) -> str:
     ts = datetime.now(timezone.utc).isoformat()
-    return (
+    header = (
         "CCPA/CPRA Re-identification Risk Report\n"
         f"Generated: {ts}\n"
         f"Total records: {summary['total']}\n"
@@ -18,3 +20,4 @@ def render_ccpa(summary: dict[str, float | int], details: list[dict]) -> str:
         "- Generalize quasi-identifiers\n"
         "- Re-run risk scoring after transformations\n"
     )
+    return header + render_per_record_section(details)

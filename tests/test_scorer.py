@@ -65,6 +65,23 @@ class ReidScorerIntegrationTests(unittest.TestCase):
         self.assertIsInstance(pdf_report, bytes)
         self.assertTrue(pdf_report.startswith(b"%PDF"))
 
+    def test_reports_include_per_record_evidence(self) -> None:
+        # Each report renderer used to accept `details` and ignore it,
+        # producing summary-only output that's useless for DPIA/expert
+        # determination review. The body must include at least one
+        # per-record line per result for all three standards.
+        results = [
+            self.gb.score("Email jane@example.com age 34"),
+            self.gb.score("A patient was discharged."),
+        ]
+        for standard in ("gdpr", "hipaa", "ccpa"):
+            html_report = self.gb.generate_report(
+                results, standard=standard, format="html"
+            )
+            self.assertIn("Per-record details:", html_report, standard)
+            self.assertIn("[1]", html_report, standard)
+            self.assertIn("[2]", html_report, standard)
+
     def test_recommendations_present_for_high_risk(self) -> None:
         result = self.gb.score("age 34 female marine biologist in SW1A 1AA")
         self.assertIn(result.rating, {Rating.MEDIUM, Rating.HIGH, Rating.CRITICAL})
