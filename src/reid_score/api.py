@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
+import traceback
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -111,9 +113,19 @@ class ReidAPIHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK, out)
         except ValueError as exc:
+            # ValueError is raised intentionally by handlers for client-input
+            # validation; its message is safe to surface.
             self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
-        except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+        except Exception:
+            # Never leak internal exception text to the client — it can contain
+            # filesystem paths, SQL fragments, credentials. Log to stderr and
+            # return a generic message.
+            self.log_error("Unhandled exception in %s", self.path)
+            traceback.print_exc(file=sys.stderr)
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Internal server error"},
+            )
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:

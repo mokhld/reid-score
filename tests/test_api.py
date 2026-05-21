@@ -120,6 +120,43 @@ class APIHTTPTests(unittest.TestCase):
         self.assertEqual(400, status)
         self.assertEqual("Invalid JSON payload", json.loads(body)["error"])
 
+    def test_internal_error_does_not_leak_exception_text(self) -> None:
+        # Force an unexpected exception by monkey-patching the shared scorer
+        # to raise something non-ValueError on score().
+        secret = "/private/path/with/secret/token-abc123"
+        original = ReidAPIHandler.scorer
+
+        class _Boom:
+            def score(self, _text: str):
+                raise RuntimeError(secret)
+
+            score_batch = score
+            compare = score
+            summarize = score
+            generate_report = score
+
+        ReidAPIHandler.scorer = _Boom()  # type: ignore[assignment]
+        try:
+            # Silence the stderr traceback emitted by the handler.
+            import io
+            import sys as _sys
+
+            saved_stderr = _sys.stderr
+            _sys.stderr = io.StringIO()
+            try:
+                status, body = self._post(
+                    "/v1/score", body=json.dumps({"text": "hello"}).encode("utf-8")
+                )
+            finally:
+                _sys.stderr = saved_stderr
+        finally:
+            ReidAPIHandler.scorer = original  # type: ignore[assignment]
+
+        self.assertEqual(500, status)
+        parsed = json.loads(body)
+        self.assertEqual("Internal server error", parsed["error"])
+        self.assertNotIn(secret, body.decode("utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
