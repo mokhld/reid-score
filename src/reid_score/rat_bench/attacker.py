@@ -60,7 +60,14 @@ class RuleBasedAttributeAttacker(AttributeAttacker):
                 m = self.ADDRESS.search(text)
                 guesses[attr] = m.group(0) if m else "unknown"
             elif attr == "name":
-                m = re.search(r"\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b", text)
+                # Allow accented characters, apostrophes, and hyphens so we
+                # match real names like "José Pérez", "Mary-Jane Smith",
+                # "O'Brien", and "Jean-Pierre Dupont".
+                m = re.search(
+                    r"\b([A-Z][\w'`’-]+(?:[ \-][A-Z][\w'`’-]+)+)\b",
+                    text,
+                    flags=re.UNICODE,
+                )
                 guesses[attr] = m.group(1) if m else "unknown"
             elif attr == "state_of_residence":
                 match = next((s for s in self.STATES if s in lower), None)

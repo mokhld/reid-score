@@ -48,8 +48,17 @@ class RegexAnonymizer(Anonymizer):
 class AggressiveRedactionAnonymizer(Anonymizer):
     name: str = "Aggressive-redactor"
 
+    # Match a capitalised token followed by optional connector (space, hyphen,
+    # apostrophe) and another capitalised token. Use \w with re.UNICODE so
+    # accented letters in names like "José" or "O'Brien" are covered, and
+    # allow apostrophe/hyphen inside or between tokens.
+    _NAME_PATTERN = re.compile(
+        r"\b[A-Z][\w'`’-]+(?:[ \-][A-Z][\w'`’-]+)*\b",
+        flags=re.UNICODE,
+    )
+
     def anonymize(self, text: str) -> str:
-        redacted = re.sub(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", "XXX", text)
+        redacted = self._NAME_PATTERN.sub("XXX", text)
         redacted = re.sub(r"\b\d{2,}\b", "XXX", redacted)
         return redacted
 
