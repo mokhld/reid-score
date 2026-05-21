@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from urllib import request
+from urllib import error, request
 
 from .base import AttackerProvider, ProviderResult
 
@@ -36,12 +36,37 @@ class OpenAIProvider(AttackerProvider):
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        content = data["choices"][0]["message"]["content"]
-        usage = int(data.get("usage", {}).get("total_tokens", 0))
+        try:
+            with request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            raise RuntimeError(
+                f"OpenAI request failed with HTTP {exc.code}: {exc.reason}"
+            ) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"OpenAI request failed: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(f"OpenAI request timed out after {self.timeout}s") from exc
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("OpenAI response was not valid JSON") from exc
+
+        choices = data.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            raise RuntimeError("OpenAI response missing 'choices'")
+        message = choices[0].get("message") or {}
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise RuntimeError("OpenAI response missing message.content")
+
+        usage = int((data.get("usage") or {}).get("total_tokens", 0))
         if content.startswith("{"):
-            parsed = json.loads(content)
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                parsed = None
             if isinstance(parsed, dict) and "attributes" in parsed:
                 content = json.dumps(parsed["attributes"])
         return ProviderResult(raw_text=content, tokens_used=usage)

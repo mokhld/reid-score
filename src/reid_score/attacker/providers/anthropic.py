@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from urllib import request
+from urllib import error, request
 
 from .base import AttackerProvider, ProviderResult
 
@@ -37,14 +37,30 @@ class AnthropicProvider(AttackerProvider):
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        try:
+            with request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            raise RuntimeError(
+                f"Anthropic request failed with HTTP {exc.code}: {exc.reason}"
+            ) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"Anthropic request failed: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(f"Anthropic request timed out after {self.timeout}s") from exc
 
-        blocks = data.get("content", [])
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Anthropic response was not valid JSON") from exc
+
+        blocks = data.get("content") or []
         text = ""
-        if blocks:
-            text = blocks[0].get("text", "")
-        usage = int(data.get("usage", {}).get("input_tokens", 0)) + int(
-            data.get("usage", {}).get("output_tokens", 0)
-        )
+        if blocks and isinstance(blocks[0], dict):
+            text = blocks[0].get("text", "") or ""
+        if not isinstance(text, str):
+            text = ""
+
+        usage_obj = data.get("usage") or {}
+        usage = int(usage_obj.get("input_tokens", 0)) + int(usage_obj.get("output_tokens", 0))
         return ProviderResult(raw_text=text, tokens_used=usage)

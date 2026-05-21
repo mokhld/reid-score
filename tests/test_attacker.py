@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import io
+import json
 import unittest
+from unittest.mock import patch
+from urllib import error
 
 from reid_score.attacker.attribute_parser import AttributeParser
 from reid_score.attacker.engine import AttackEngine
 from reid_score.attacker.prompt_engine import build_attacker_prompt
+from reid_score.attacker.providers.anthropic import AnthropicProvider
 from reid_score.attacker.providers.base import AttackerProvider, ProviderResult
+from reid_score.attacker.providers.ollama import OllamaProvider
+from reid_score.attacker.providers.openai import OpenAIProvider
 from reid_score.attacker.providers.rule_based import RuleBasedProvider
 
 
@@ -93,6 +100,99 @@ class RuleBasedProviderTests(unittest.TestCase):
         self.assertIn("age_range", names)
         self.assertIn("gender", names)
         self.assertIn("occupation", names)
+
+
+def _fake_response(payload: dict | str) -> io.BytesIO:
+    body = payload if isinstance(payload, str) else json.dumps(payload)
+    buf = io.BytesIO(body.encode("utf-8"))
+    buf.__enter__ = lambda self=buf: self  # type: ignore[attr-defined]
+    buf.__exit__ = lambda self=buf, *args: None  # type: ignore[attr-defined]
+    return buf
+
+
+class LLMProviderErrorHandlingTests(unittest.TestCase):
+    """Mock urlopen to verify provider error paths raise clean RuntimeErrors."""
+
+    def test_openai_translates_http_error(self) -> None:
+        provider = OpenAIProvider(api_key="test-key")
+        http_err = error.HTTPError(
+            url="https://api.openai.com",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,  # type: ignore[arg-type]
+            fp=None,
+        )
+        with patch("reid_score.attacker.providers.openai.request.urlopen", side_effect=http_err):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.infer("prompt", "gpt-4o-mini")
+        self.assertIn("429", str(ctx.exception))
+
+    def test_openai_translates_network_error(self) -> None:
+        provider = OpenAIProvider(api_key="test-key")
+        url_err = error.URLError("connection refused")
+        with patch("reid_score.attacker.providers.openai.request.urlopen", side_effect=url_err):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.infer("prompt", "gpt-4o-mini")
+        self.assertIn("connection refused", str(ctx.exception))
+
+    def test_openai_rejects_malformed_response_shape(self) -> None:
+        provider = OpenAIProvider(api_key="test-key")
+        with patch(
+            "reid_score.attacker.providers.openai.request.urlopen",
+            return_value=_fake_response({"unexpected": "shape"}),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.infer("prompt", "gpt-4o-mini")
+        self.assertIn("choices", str(ctx.exception))
+
+    def test_openai_parses_valid_response(self) -> None:
+        provider = OpenAIProvider(api_key="test-key")
+        payload = {
+            "choices": [{"message": {"content": "[]"}}],
+            "usage": {"total_tokens": 42},
+        }
+        with patch(
+            "reid_score.attacker.providers.openai.request.urlopen",
+            return_value=_fake_response(payload),
+        ):
+            result = provider.infer("prompt", "gpt-4o-mini")
+        self.assertEqual("[]", result.raw_text)
+        self.assertEqual(42, result.tokens_used)
+
+    def test_anthropic_translates_http_error(self) -> None:
+        provider = AnthropicProvider(api_key="test-key")
+        with patch(
+            "reid_score.attacker.providers.anthropic.request.urlopen",
+            side_effect=error.HTTPError(
+                url="https://api.anthropic.com",
+                code=401,
+                msg="Unauthorized",
+                hdrs=None,  # type: ignore[arg-type]
+                fp=None,
+            ),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.infer("prompt", "claude-x")
+        self.assertIn("401", str(ctx.exception))
+
+    def test_anthropic_handles_empty_content_blocks(self) -> None:
+        provider = AnthropicProvider(api_key="test-key")
+        with patch(
+            "reid_score.attacker.providers.anthropic.request.urlopen",
+            return_value=_fake_response({"content": [], "usage": {}}),
+        ):
+            result = provider.infer("prompt", "claude-x")
+        self.assertEqual("", result.raw_text)
+
+    def test_ollama_translates_url_error(self) -> None:
+        provider = OllamaProvider()
+        with patch(
+            "reid_score.attacker.providers.ollama.request.urlopen",
+            side_effect=error.URLError("daemon not running"),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.infer("prompt", "llama3")
+        self.assertIn("daemon not running", str(ctx.exception))
 
 
 if __name__ == "__main__":

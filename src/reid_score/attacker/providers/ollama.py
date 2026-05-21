@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from urllib import request
+from urllib import error, request
 
 from .base import AttackerProvider, ProviderResult
 
@@ -29,8 +29,23 @@ class OllamaProvider(AttackerProvider):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        raw = str(data.get("response", ""))
-        tokens = int(data.get("eval_count", 0)) + int(data.get("prompt_eval_count", 0))
-        return ProviderResult(raw_text=raw, tokens_used=tokens)
+        try:
+            with request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            raise RuntimeError(
+                f"Ollama request failed with HTTP {exc.code}: {exc.reason}"
+            ) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"Ollama request failed: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(f"Ollama request timed out after {self.timeout}s") from exc
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Ollama response was not valid JSON") from exc
+
+        text = str(data.get("response", "") or "")
+        tokens = int(data.get("eval_count", 0) or 0) + int(data.get("prompt_eval_count", 0) or 0)
+        return ProviderResult(raw_text=text, tokens_used=tokens)
