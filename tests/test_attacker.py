@@ -101,6 +101,18 @@ class RuleBasedProviderTests(unittest.TestCase):
         self.assertIn("gender", names)
         self.assertIn("occupation", names)
 
+    def test_marital_status_is_exclusive(self) -> None:
+        # "married but now divorced" must produce exactly one marital_status
+        # attribute — the more recent state ("divorced"), not both.
+        provider = RuleBasedProvider()
+        out = provider.infer(
+            "Text: She was married but is now divorced.", model="heuristic-v1"
+        )
+        attrs = AttributeParser.parse(out.raw_text)
+        marital = [a for a in attrs if a.attribute == "marital_status"]
+        self.assertEqual(1, len(marital))
+        self.assertEqual("divorced", marital[0].value)
+
 
 def _fake_response(payload: dict | str) -> io.BytesIO:
     body = payload if isinstance(payload, str) else json.dumps(payload)

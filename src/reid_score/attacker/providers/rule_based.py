@@ -136,24 +136,28 @@ class RuleBasedProvider(AttackerProvider):
                 }
             )
 
-        if "married" in lower:
+        # Marital status is exclusive — `He was married but is now divorced`
+        # must not emit both. Order favours the more recent state.
+        marital_value: str | None = None
+        if "widowed" in lower:
+            marital_value = "widowed"
+        elif "divorced" in lower:
+            marital_value = "divorced"
+        elif "separated" in lower:
+            marital_value = "separated"
+        elif "never married" in lower:
+            marital_value = "single"
+        elif "married" in lower:
+            marital_value = "married"
+        elif " single " in f" {lower} " or lower.endswith(" single"):
+            marital_value = "single"
+        if marital_value:
             inferred.append(
                 {
                     "attribute": "marital_status",
-                    "inferred_value": "married",
+                    "inferred_value": marital_value,
                     "confidence": 0.76,
-                    "evidence": "married",
-                    "category": "quasi",
-                }
-            )
-
-        if "divorced" in lower:
-            inferred.append(
-                {
-                    "attribute": "marital_status",
-                    "inferred_value": "divorced",
-                    "confidence": 0.76,
-                    "evidence": "divorced",
+                    "evidence": marital_value,
                     "category": "quasi",
                 }
             )
