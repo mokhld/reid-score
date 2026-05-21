@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from reid_score.rat_bench import RATBenchPipeline, RATBenchPipelineConfig
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SAMPLE_CSV = REPO_ROOT / "tests" / "fixtures" / "rat_bench_pums_sample.csv"
 
 
 def main() -> None:
     pipeline = RATBenchPipeline.from_provider(
         provider_name="csv",
         profile_name="production",
-        path="tests/fixtures/rat_bench_pums_sample.csv",
+        path=str(SAMPLE_CSV),
     )
 
     out = pipeline.run(
