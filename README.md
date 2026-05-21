@@ -165,7 +165,7 @@ The scoring methodology is grounded in established re-identification risk litera
 | Prosecutor attacker model | El Emam (2011) | Single-text risk scoring |
 | Correctness kappa | Rocher et al. (2019) | `correctness_kappa()` in RAT-Bench |
 
-This repository also includes a RAT-Bench module (`src/reid_score/rat_bench/`) that faithfully reimplements the evaluation framework from arXiv:2602.12806v1 for benchmark-style anonymisation assessment.
+This repository also includes a RAT-Bench module (`src/reid_score/rat_bench/`) that reimplements the RAT-Bench evaluation framework for benchmark-style anonymisation assessment. The specific citation is pending verification; the implementation should be considered as inspired by, rather than canonical to, any specific publication.
 
 ## Determinism and Hallucination Controls
 

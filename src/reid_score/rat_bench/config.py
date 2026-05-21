@@ -97,7 +97,7 @@ def paper_profile() -> BenchmarkProfile:
         generation=GenerationPolicy(n_records=100, nq=5, ni=1, theta0=0.9, language="en", seed=7),
         evaluation=EvaluationPolicy(theta=0.2),
         matching=matching,
-        metadata={"source": "RAT-Bench arXiv:2602.12806v1", "mode": "benchmark"},
+        metadata={"source": "RAT-Bench (citation pending verification)", "mode": "benchmark"},
     )
 
 
