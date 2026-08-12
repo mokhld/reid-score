@@ -12,11 +12,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def _run_cli(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "reid_score.cli", *args],
         cwd=REPO_ROOT,
         env={**os.environ, "PYTHONPATH": "src"},
+        input=stdin,
         capture_output=True,
         text=True,
         check=False,
@@ -36,6 +37,57 @@ class CLITests(unittest.TestCase):
             payload = json.loads(proc.stdout)
             self.assertIn("results", payload)
             self.assertIn("summary", payload)
+
+    def test_cli_results_labeled_with_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            risky = Path(tmpdir) / "risky.txt"
+            risky.write_text("Email jane.doe@example.com", encoding="utf-8")
+            clean = Path(tmpdir) / "clean.txt"
+            clean.write_text("Nothing sensitive here.", encoding="utf-8")
+
+            proc = _run_cli("scan", str(risky), str(clean))
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            self.assertIn("risky.txt", proc.stdout)
+            self.assertIn("clean.txt", proc.stdout)
+            self.assertIn("direct=email", proc.stdout)
+
+            proc = _run_cli("scan", str(risky), str(clean), "--json")
+            payload = json.loads(proc.stdout)
+            sources = [r["source"] for r in payload["results"]]
+            self.assertEqual([str(risky), str(clean)], sources)
+
+    def test_cli_reads_stdin_with_dash(self) -> None:
+        proc = _run_cli(
+            "scan", "-", "--geography", "GB", "--json",
+            stdin="Age 34 female marine biologist in SW1A 1AA",
+        )
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual("<stdin>", payload["results"][0]["source"])
+        self.assertGreater(payload["results"][0]["score"], 0.0)
+
+    def test_cli_fail_above_gates_exit_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            risky = Path(tmpdir) / "risky.txt"
+            risky.write_text("Email jane.doe@example.com", encoding="utf-8")
+            clean = Path(tmpdir) / "clean.txt"
+            clean.write_text("Nothing sensitive here.", encoding="utf-8")
+
+            proc = _run_cli("scan", str(risky), str(clean), "--fail-above", "0.7")
+            self.assertEqual(1, proc.returncode)
+            self.assertIn("risky.txt", proc.stderr)
+            self.assertIn("0.7", proc.stderr)
+            # Results still print before the failure summary.
+            self.assertIn("clean.txt", proc.stdout)
+
+            proc = _run_cli("scan", str(clean), "--fail-above", "0.7")
+            self.assertEqual(0, proc.returncode, proc.stderr)
+
+    def test_cli_fail_above_rejects_out_of_range_threshold(self) -> None:
+        for bad in ["1.0", "1.5", "-0.1", "abc"]:
+            proc = _run_cli("scan", "somefile.txt", "--fail-above", bad)
+            self.assertEqual(2, proc.returncode, f"threshold {bad} accepted")
+            self.assertNotIn("Traceback", proc.stderr)
 
     def test_cli_missing_command_exits_nonzero(self) -> None:
         proc = _run_cli()
