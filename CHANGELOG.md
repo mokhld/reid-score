@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-12
+
 ### Added
 - `.github/workflows/test.yml`: CI runs the test suite on Python
   3.10/3.11/3.12 across Ubuntu and macOS on every push and PR.
