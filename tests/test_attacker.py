@@ -101,6 +101,42 @@ class RuleBasedProviderTests(unittest.TestCase):
         self.assertIn("gender", names)
         self.assertIn("occupation", names)
 
+    def test_uk_phone_numbers_detected(self) -> None:
+        provider = RuleBasedProvider()
+        for number in [
+            "07911 123456",
+            "07911123456",
+            "020 7946 0958",
+            "(020) 7946 0958",
+            "+44 7911 123456",
+            "+44 (0)161 496 0000",
+        ]:
+            out = provider.infer(f"Text: Call me on {number} today.", model="heuristic-v1")
+            attrs = AttributeParser.parse(out.raw_text)
+            names = {a.attribute for a in attrs}
+            self.assertIn("phone", names, f"missed UK number: {number}")
+
+    def test_uk_nin_detected(self) -> None:
+        provider = RuleBasedProvider()
+        for nin in ["AB 12 34 56 C", "AB123456C"]:
+            out = provider.infer(f"Text: NI number {nin} on file.", model="heuristic-v1")
+            attrs = AttributeParser.parse(out.raw_text)
+            names = {a.attribute for a in attrs}
+            self.assertIn("ssn_or_nin", names, f"missed NIN: {nin}")
+
+    def test_plain_numbers_not_treated_as_identifiers(self) -> None:
+        provider = RuleBasedProvider()
+        for text in [
+            "Between 2015 and 2019, sales rose 3401 units.",
+            "Version 0.12.3456 was released.",
+            "Set the offset to 0 12 34 56 then restart.",
+        ]:
+            out = provider.infer(f"Text: {text}", model="heuristic-v1")
+            attrs = AttributeParser.parse(out.raw_text)
+            names = {a.attribute for a in attrs}
+            self.assertNotIn("phone", names, f"false phone in: {text}")
+            self.assertNotIn("ssn_or_nin", names, f"false NIN in: {text}")
+
     def test_marital_status_is_exclusive(self) -> None:
         # "married but now divorced" must produce exactly one marital_status
         # attribute — the more recent state ("divorced"), not both.

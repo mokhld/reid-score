@@ -13,7 +13,20 @@ class RuleBasedProvider(AttackerProvider):
 
     EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
     PHONE = re.compile(r"\b(?:\+?\d{1,2}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b")
+    # UK numbers: a leading 0 (or +44/0044 with optional bracketed 0) followed
+    # by 9-10 digits in the usual groupings — 07911 123456, 020 7946 0958,
+    # +44 (0)161 496 0000. The NANP pattern above never matches these.
+    PHONE_UK = re.compile(
+        r"(?<!\d)(?:(?:\+44|0044)[\s.-]?\(?0?\)?[\s.-]?\d{2,5}|\(?0\d{2,4}\)?)"
+        r"[\s.-]?\d{3,4}[\s.-]?\d{3,4}(?!\d)"
+    )
     SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+    # UK National Insurance number: QQ 12 34 56 C, with or without spaces.
+    # Prefix letters exclude D/F/I/Q/U/V; the suffix is always A-D.
+    NIN = re.compile(
+        r"\b[A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b",
+        re.IGNORECASE,
+    )
     AGE = re.compile(
         r"\bage[ds]?\s+(\d{2})\b|\b(\d{2})\s*[-\s]?(?:years?\s*old|year-old|y/?o)\b",
         re.IGNORECASE,
@@ -43,7 +56,7 @@ class RuleBasedProvider(AttackerProvider):
                 }
             )
 
-        phone = self.PHONE.search(text)
+        phone = self.PHONE.search(text) or self.PHONE_UK.search(text)
         if phone:
             inferred.append(
                 {
@@ -55,7 +68,7 @@ class RuleBasedProvider(AttackerProvider):
                 }
             )
 
-        ssn = self.SSN.search(text)
+        ssn = self.SSN.search(text) or self.NIN.search(text)
         if ssn:
             inferred.append(
                 {
