@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recommendations). Previously the `details` argument was accepted but
   ignored.
 - `CONTRIBUTING.md` and this `CHANGELOG.md`.
+- CLI: `--fail-above SCORE` exits with status 1 when any input scores
+  above the threshold, so `reid-score scan` can gate CI pipelines.
+  Thresholds outside `[0.0, 1.0)` are rejected with a clear error.
+- CLI: `reid-score scan -` reads from stdin.
+- CLI: every result is labeled with its source path, both in the
+  human-readable output (`risky.txt: score=1.000 ...`) and as a
+  `source` field in `--json` output. Previously batch results were
+  numbered `[1]`, `[2]` with no way to map them back to files. The
+  human-readable line also lists direct identifiers when found
+  (`direct=email,phone`).
 
 ### Changed
 - The CLI uses `argparse` subparsers (`reid-score scan ...`) instead of
@@ -62,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drafts.
 
 ### Fixed
+- The rule-based attacker now detects UK phone numbers (`07911 123456`,
+  `020 7946 0958`, `+44 (0)161 496 0000`) and UK National Insurance
+  numbers (`AB 12 34 56 C`). Previously both scored 0.0 LOW despite GB
+  being a bundled geography: a false negative on direct identifiers.
 - `examples/rat_bench_production.py` no longer requires the script to be
   run from the repo root; it resolves the fixture path from `__file__`.
 - README quickstart inline comment now matches the actual recommendation

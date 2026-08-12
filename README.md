@@ -197,6 +197,18 @@ python -m unittest discover -s tests -v
 reid-score scan file1.txt file2.txt --geography GB --json
 ```
 
+Each result is labeled with its source path (a `source` field in JSON output), so batch output maps back to files. Pass `-` to read from stdin:
+
+```bash
+cat transcript.txt | reid-score scan - --geography GB
+```
+
+To gate a CI pipeline, use `--fail-above`: the command exits with status 1 if any input scores above the threshold.
+
+```bash
+reid-score scan release_docs/*.txt --fail-above 0.7 --json > risk.json
+```
+
 ## Project Structure
 
 ```
