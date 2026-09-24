@@ -8,7 +8,10 @@ from reid_score.types import InferredAttribute, Rating
 class RiskCalculator:
     """Combines direct leakage and weighted uniqueness."""
 
-    DIRECT_ATTRIBUTES = {"full_name", "email", "phone", "ssn_or_nin", "address"}
+    DIRECT_ATTRIBUTES = {"full_name", "email", "phone", "ssn_or_nin", "address", "date_of_birth"}
+
+    def __init__(self, confidence_threshold: float = 0.5) -> None:
+        self.confidence_threshold = confidence_threshold
 
     def score(
         self,
@@ -16,10 +19,14 @@ class RiskCalculator:
         uniqueness: float,
         confidence_weight: float,
     ) -> tuple[float, Rating, list[str]]:
+        # A direct identifier counts only when it has a real value and the
+        # attacker is at least as confident as the threshold used for QIs.
         direct_identifiers_found = [
             attr.attribute
             for attr in attributes
-            if attr.attribute in self.DIRECT_ATTRIBUTES and attr.value.lower() != "unknown"
+            if attr.attribute in self.DIRECT_ATTRIBUTES
+            and attr.value.lower() != "unknown"
+            and attr.confidence >= self.confidence_threshold
         ]
 
         direct_leak_score = 1.0 if direct_identifiers_found else 0.0

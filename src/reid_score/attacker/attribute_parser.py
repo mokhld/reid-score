@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from reid_score.attacker.normalize import UNKNOWN, clean_value, normalize_quasi_value
 from reid_score.types import InferredAttribute
 
 CATEGORY_MAP = {
@@ -14,6 +15,7 @@ CATEGORY_MAP = {
     "phone": "direct",
     "ssn_or_nin": "direct",
     "address": "direct",
+    "date_of_birth": "direct",
     "age_range": "quasi",
     "gender": "quasi",
     "ethnicity": "quasi",
@@ -38,27 +40,47 @@ class AttributeParser:
     _KNOWN_ATTRIBUTES = set(CATEGORY_MAP)
 
     @staticmethod
-    def _extract_json(raw: str) -> list[dict[str, Any]]:
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?", "", raw).strip()
-            raw = re.sub(r"```$", "", raw).strip()
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                return parsed
-        except json.JSONDecodeError:
-            pass
+    def _as_items(parsed: Any) -> list[Any] | None:
+        """Return the item list from a bare array or from {"attributes": [...]}."""
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and isinstance(parsed.get("attributes"), list):
+            return parsed["attributes"]
+        return None
 
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if match:
+    @classmethod
+    def _extract_json(cls, raw: str) -> list[Any]:
+        """Find the attribute list in provider output.
+
+        Accepts {"attributes": [...]} or a bare array, on its own, inside a
+        fenced code block, or embedded in prose. Raises ValueError otherwise.
+        """
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("provider output was empty")
+        fenced = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL | re.IGNORECASE)
+        candidates = [fenced.group(1), raw] if fenced else [raw]
+        for candidate in candidates:
             try:
-                parsed = json.loads(match.group(0))
-                if isinstance(parsed, list):
-                    return parsed
+                items = cls._as_items(json.loads(candidate))
             except json.JSONDecodeError:
-                pass
-        raise ValueError("Provider response is not parseable JSON array")
+                items = None
+            if items is not None:
+                return items
+
+        # Embedded in prose: decode a JSON value at each opening bracket and
+        # keep the first one that holds attribute items. Bracketed prose such
+        # as "[REDACTED]" does not decode and is skipped.
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"[\[{]", raw):
+            try:
+                parsed, _ = decoder.raw_decode(raw, match.start())
+            except json.JSONDecodeError:
+                continue
+            items = cls._as_items(parsed)
+            if items is not None and all(isinstance(item, dict) for item in items):
+                return items
+        raise ValueError('no JSON array or {"attributes": [...]} object found')
 
     @staticmethod
     def _coerce_confidence(value: Any) -> float:
@@ -88,7 +110,9 @@ class AttributeParser:
             name = str(item.get("attribute", "")).strip()
             if name not in cls._KNOWN_ATTRIBUTES:
                 continue
-            value = str(item.get("inferred_value", "unknown")).strip() or "unknown"
+            value = clean_value(item.get("inferred_value"))
+            if CATEGORY_MAP[name] == "quasi":
+                value = normalize_quasi_value(name, value)
             confidence = cls._coerce_confidence(item.get("confidence", 0.0))
             evidence = str(item.get("evidence", "")).strip()
             category = cls._normalize_category(name, item.get("category"))
@@ -101,9 +125,12 @@ class AttributeParser:
             )
             dedupe_key = parsed.attribute
             current = deduped.get(dedupe_key)
-            if current is None or parsed.confidence > current.confidence:
+            # A real value outranks "unknown" whatever the confidences are.
+            rank = (parsed.value != UNKNOWN, parsed.confidence)
+            current_rank = None if current is None else (current.value != UNKNOWN, current.confidence)
+            if current_rank is None or rank > current_rank:
                 deduped[dedupe_key] = parsed
-            elif parsed.confidence == current.confidence and (
+            elif rank == current_rank and (
                 parsed.value,
                 parsed.evidence,
             ) < (

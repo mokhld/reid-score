@@ -70,20 +70,23 @@ scorer = ReidScorer(
 )
 ```
 
-Set the API key via environment variable (`OPENAI_API_KEY`) or constructor argument (`llm_api_key="..."`). Anthropic and Ollama follow the same pattern.
+Set the API key via environment variable (`OPENAI_API_KEY`) or constructor argument (`llm_api_key="..."`). Anthropic and Ollama follow the same pattern. `llm_model` is required for every provider except `rule_based`; the constructor raises `ValueError` without it.
+
+LLM providers send the full input text to the provider. If the text may still contain personal data, check that sending it to a third party is allowed, or use `ollama` locally.
 
 ## API Reference
 
-### `ReidScorer(llm_provider, llm_model, geography, confidence_threshold, demographic_data, llm_api_key)`
+### `ReidScorer(llm_provider, llm_model, geography, confidence_threshold, demographic_data, llm_api_key, strict)`
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `llm_provider` | `"rule_based"` | `rule_based`, `openai`, `anthropic`, or `ollama` |
-| `llm_model` | `"heuristic-v1"` | Model identifier for the chosen provider |
+| `llm_model` | `None` | Model identifier. Required for `openai`, `anthropic`, and `ollama`; `rule_based` uses `heuristic-v1` |
 | `geography` | `"US"` | `US` or `GB` — selects the bundled demographic dataset |
-| `confidence_threshold` | `0.5` | Minimum attacker confidence for a quasi-identifier to count |
+| `confidence_threshold` | `0.5` | Minimum attacker confidence for a quasi-identifier or direct identifier to count |
 | `demographic_data` | `"bundled"` | Data source mode (currently `bundled` only) |
 | `llm_api_key` | `None` | Explicit API key (overrides environment variable) |
+| `strict` | `False` | Raise `RuntimeError` instead of falling back to `rule_based` when LLM output cannot be parsed |
 
 ### `scorer.score(text) -> ScoreResult`
 
@@ -99,6 +102,8 @@ result.recommendations          # list[str]
 result.disparate_impact_flags   # list[str]
 result.processing_time_ms       # int
 result.llm_tokens_used          # int
+result.attacker_used            # 'rule_based', 'openai', 'anthropic' or 'ollama'
+result.fallback_reason          # str | None, set when LLM output fell back to rule_based
 ```
 
 ### `scorer.score_batch(texts, concurrency=5) -> list[ScoreResult]`
@@ -127,7 +132,7 @@ Generate compliance reports. Standards: `gdpr`, `hipaa`, `ccpa`. Formats: `json`
 
 ## Scoring Semantics
 
-**Direct identifiers** (`full_name`, `email`, `phone`, `ssn_or_nin`, `address`) with a non-unknown value force the score to `1.0` — any direct identifier is a full re-identification.
+**Direct identifiers** (`full_name`, `email`, `phone`, `ssn_or_nin`, `address`, `date_of_birth`) with a real value and attacker confidence at or above `confidence_threshold` force the score to `1.0`: any direct identifier is a full re-identification. Placeholders such as `null`, `"N/A"`, `"not mentioned"`, `[REDACTED]`, or `XXX` count as unknown.
 
 **Quasi-identifiers** (`age_range`, `gender`, `ethnicity`, `occupation`, `postcode_district`, `marital_status`, `nationality`) are looked up in the demographic cross-tabulation. Risk = `1 / population_count`, weighted by mean attacker confidence.
 
@@ -151,7 +156,7 @@ Generate compliance reports. Standards: `gdpr`, `hipaa`, `ccpa`. Formats: `json`
 
 The `rule_based` provider uses regex patterns and keyword matching for: emails, phone numbers, SSNs, UK postcodes, age (with context), gender, 8 occupation types, marital status, employer names, and 4 medical conditions.
 
-LLM providers can detect a broader range of attributes through natural language understanding. If an LLM provider returns unparseable output, the engine falls back to `rule_based` automatically.
+LLM providers can detect a broader range of attributes through natural language understanding. The prompt states the expected value format for each quasi-identifier, and returned values are normalised to the population table's vocabulary (for example `"34"` or `"30s"` becomes `"30-39"`, `"woman"` becomes `"female"`, `"US"` becomes `"american"`). If an LLM provider returns output that cannot be parsed, the engine falls back to `rule_based` and records it in `attacker_used` and `fallback_reason`. Pass `strict=True` (CLI: `--strict`) to raise instead.
 
 ## Academic Foundation
 
@@ -169,9 +174,9 @@ This repository also includes a RAT-Bench module (`src/reid_score/rat_bench/`) t
 
 ## Determinism and Hallucination Controls
 
-- `rule_based` mode is fully deterministic — same input, same output, every time.
+- `rule_based` mode is fully deterministic: same input, same output, every time.
 - The attribute parser enforces a known-attribute allowlist, clamps confidence to `[0.0, 1.0]`, normalises categories to canonical values, and deduplicates deterministically.
-- Missing or invalid provider credentials raise immediately — no silent fallback to a weaker provider.
+- Missing or invalid provider credentials, and a missing model name, raise immediately. A fallback to `rule_based` after unparseable LLM output is recorded on the result, never silent.
 
 ## Bundled Demographic Data
 
@@ -252,6 +257,7 @@ src/reid_score/
 │   ├── engine.py          # Orchestrator with fallback logic
 │   ├── prompt_engine.py   # LLM prompt construction
 │   ├── attribute_parser.py # JSON parsing + sanitisation
+│   ├── normalize.py       # Placeholder cleaning and value normalisation
 │   └── providers/         # rule_based, openai, anthropic, ollama
 ├── demographics/          # Population uniqueness
 │   ├── lookup.py          # SQLite cross-tab queries

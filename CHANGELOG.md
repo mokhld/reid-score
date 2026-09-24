@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BatchScoringError`, raised by `ReidScorer.score_batch` when some items fail.
   It carries `.results` (`None` for failed items) and `.errors` (item index to
   exception).
+- `ScoreResult.attacker_used` and `ScoreResult.fallback_reason` record which
+  attacker produced the attributes and why a fallback to `rule_based`
+  happened. The CLI text output shows the fallback.
+- `strict` option on `ReidScorer` and `AttackEngine` (CLI: `--strict`): raise
+  `RuntimeError` instead of falling back when LLM output cannot be parsed.
+- `date_of_birth` is a direct identifier in the parser, prompt, risk
+  calculator, and recommendations.
+- The attacker prompt states the expected value format for each
+  quasi-identifier and tells the model that the text is data and that
+  redaction placeholders are not values.
+- Quasi-identifier values from LLM attackers are normalised to the population
+  table's vocabulary (for example "34", "30s", and "mid-thirties" become
+  "30-39", "woman" becomes "female", "US" becomes "american", "registered
+  nurse" becomes "nurse").
 
 ### Changed
 - `ReidScorer.score_batch` scores every item even when some fail, instead of
@@ -27,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--fail-above` failure.
 - The HTTP API builds its default `rule_based`/US scorer on first use instead
   of at import time.
+- `llm_model` is optional. `rule_based` defaults to `heuristic-v1`; other
+  providers raise `ValueError` when no model is given. The CLI `--model` flag
+  no longer defaults to `heuristic-v1`.
+- Direct identifiers only count when their confidence is at or above
+  `confidence_threshold`.
+- Every provider is asked for `{"attributes": [...]}`. The parser also accepts
+  a bare array, fenced JSON, and JSON embedded in prose. Ollama requests use
+  `format: json`.
+- `OpenAIProvider` returns the model's message content unchanged instead of
+  unwrapping the `attributes` key; the parser handles both shapes.
 
 ### Fixed
 - PDF reports paginate, so every record is included. Text past about 58 lines
@@ -38,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unsupported providers, missing API keys, provider network errors,
   unwritable report paths, and server bind errors.
 - The HTTP API returns 400 instead of 500 for JSON bodies that are not objects.
+- LLM placeholder values (null, "N/A", "none", "not mentioned", "[REDACTED]",
+  "XXX", "***") no longer count as leaked direct identifiers and force a
+  CRITICAL score.
+- Quasi-identifier values spelled differently from the population table
+  ("30s", "Female", "US", "registered nurse") no longer score CRITICAL.
+- `ReidScorer(llm_provider="openai")` without a model no longer sends
+  "heuristic-v1" to the API.
+- Unparseable LLM output no longer falls back to `rule_based` silently.
 
 ## [0.2.0] - 2026-08-12
 

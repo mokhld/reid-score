@@ -49,6 +49,8 @@ class ScoreResult:
     disparate_impact_flags: list[str] = field(default_factory=list)
     processing_time_ms: int = 0
     llm_tokens_used: int = 0
+    attacker_used: str = "rule_based"
+    fallback_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)

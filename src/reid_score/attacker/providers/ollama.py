@@ -20,6 +20,7 @@ class OllamaProvider(AttackerProvider):
             "model": model,
             "prompt": prompt,
             "stream": False,
+            "format": "json",
             "options": {"temperature": 0},
         }
         body = json.dumps(payload).encode("utf-8")

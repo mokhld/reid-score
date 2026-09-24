@@ -62,11 +62,4 @@ class OpenAIProvider(AttackerProvider):
             raise RuntimeError("OpenAI response missing message.content")
 
         usage = int((data.get("usage") or {}).get("total_tokens", 0))
-        if content.startswith("{"):
-            try:
-                parsed = json.loads(content)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, dict) and "attributes" in parsed:
-                content = json.dumps(parsed["attributes"])
         return ProviderResult(raw_text=content, tokens_used=usage)

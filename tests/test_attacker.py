@@ -19,7 +19,7 @@ from reid_score.attacker.providers.rule_based import RuleBasedProvider
 class PromptEngineTests(unittest.TestCase):
     def test_prompt_contains_required_guidance(self) -> None:
         prompt = build_attacker_prompt("Example text")
-        self.assertIn("STRICT JSON array", prompt)
+        self.assertIn("STRICT JSON", prompt)
         self.assertIn("Example text", prompt)
         self.assertIn("age_range", prompt)
 
