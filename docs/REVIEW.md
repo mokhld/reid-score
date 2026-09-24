@@ -5,6 +5,11 @@ session, single pass (package is about 3,000 lines of source, so no fan-out).
 
 No earlier review existed. The previous CLAUDE.md held only generic working principles.
 
+Update 2026-09-24 (same day): every Part A item and the lower-priority list were fixed
+in PRs #3 to #7 and released in v0.3.0; B1 was built in #6. Remaining and newly found
+issues are under "Follow-up after the fixes" near the end. Open features (B2 to B7 and
+more) are specified as agent-ready briefs in `docs/FEATURES.md`.
+
 Status values: `open`, `in progress`, `fixed`. Update the status line on each item when
 work lands, and add new findings under a dated heading rather than rewriting history.
 
@@ -30,7 +35,7 @@ ranked by how much they break those three things.
 
 ### A1. Default attacker misses names, street addresses, ZIP codes and dates of birth
 
-Status: open. Severity: critical. Verified.
+Status: fixed in #7. Severity: critical. Verified.
 
 Where: `src/reid_score/attacker/providers/rule_based.py` (whole `infer` method). There
 is no detector for `full_name` or `address`, no US ZIP pattern, and no date-of-birth
@@ -62,7 +67,8 @@ three inputs above. Effort: medium.
 
 ### A2. Population lookup is 9 hand-typed rows per country, and a miss scores as population 1
 
-Status: open. Severity: critical. Verified.
+Status: fixed in #6 (unmatched values are dropped and reported; geography validated;
+postcode regex tightened in #7). Residual: see N1. Severity: critical. Verified.
 
 Where:
 - `scripts/build_sample_data.py:38-65`: the entire US and GB "census" tables, 9 rows
@@ -110,7 +116,7 @@ tables are illustrative. Long term: see B1.
 
 ### A3. LLM mode: "not found" placeholders for direct identifiers score CRITICAL
 
-Status: open. Severity: high. Verified with a stub provider.
+Status: fixed in #4. Severity: high. Verified with a stub provider.
 
 Where: `src/reid_score/attacker/attribute_parser.py:91` converts JSON `null` to the
 string `"None"`. `src/reid_score/risk/calculator.py:19-23` counts any direct
@@ -134,7 +140,8 @@ Effort: small.
 
 ### A4. LLM mode: quasi-identifier values outside the table's exact vocabulary score CRITICAL
 
-Status: open. Severity: high. Verified with a stub provider (payloads verified with a
+Status: fixed in #4 (with the unmatched-value rule from #6). Severity: high. Verified
+with a stub provider (payloads verified with a
 mocked `urlopen`).
 
 Where: `src/reid_score/attacker/prompt_engine.py:28-40` never tells the model the
@@ -168,7 +175,7 @@ non-rule-based providers or set a per-provider default. Effort: medium.
 
 ### A5. RAT-Bench results are computed on corrupted data and mislabelled components
 
-Status: open. Severity: high for anyone using RAT-Bench numbers; RAT-Bench is
+Status: fixed in #5. Severity: high for anyone using RAT-Bench numbers; RAT-Bench is
 secondary to the core scorer. All parts verified.
 
 Where and evidence:
@@ -211,7 +218,7 @@ equivalence-class sizes once with a `Counter`. Effort: medium.
 
 ### A6. Silent fallback to rule_based when LLM output does not parse
 
-Status: open. Severity: medium. Verified with a stub provider; OpenAI shape issue
+Status: fixed in #4. Severity: medium. Verified with a stub provider; OpenAI shape issue
 code-read.
 
 Where: `src/reid_score/attacker/engine.py:40-46`. `ScoreResult` has no field saying
@@ -235,7 +242,7 @@ output; add a `strict` option that raises instead; ask every provider for
 
 ### A7. PDF compliance reports drop everything past about 58 lines
 
-Status: open. Severity: medium. Verified.
+Status: fixed in #3. Severity: medium. Verified.
 
 Where: `src/reid_score/scorer.py:169-215` (`_basic_pdf`). One page, text starts at
 y=800 and moves down 14 pt per line with no pagination.
@@ -253,34 +260,39 @@ per the PDF string rules. Effort: small.
 
 ### Lower-priority issues (not ranked)
 
-All open.
+All fixed; the PR is noted on each item.
 
 - CLI `--json --report X` without `--report-output` prints two JSON documents to
-  stdout, which `json.load` rejects (`cli.py:95-131`). Verified.
+  stdout, which `json.load` rejects (`cli.py:95-131`). Verified. Fixed in #3.
 - CLI: unsupported `--provider`, missing API key, and network errors print a Python
-  traceback; only file-read errors are wrapped (`cli.py:83-93`). Verified.
+  traceback; only file-read errors are wrapped (`cli.py:83-93`). Verified. Fixed in #3.
 - HTTP API scorer is a class attribute fixed to `rule_based`/US (`api.py:78`); there
   is no way to choose geography or provider, no console script, and no README
-  section. Code-read.
+  section. Code-read. Fixed in #3 (`reid-score serve`, `make_server`).
 - `score_batch` uses `executor.map`, so one provider exception aborts the batch and
-  discards the other results (`scorer.py:71-73`). Code-read.
+  discards the other results (`scorer.py:71-73`). Code-read. Fixed in #3
+  (`BatchScoringError`).
 - `disparity_flags` can never fire in `rule_based` mode, which does not detect
-  ethnicity, religion or sexual orientation (`risk/disparity.py`). Code-read.
+  ethnicity, religion or sexual orientation (`risk/disparity.py`). Code-read. Fixed
+  in #7.
 - Keyword substring matches: `nursery` gives occupation nurse; `Born under the sign
   of Cancer` gives medical condition cancer (`rule_based.py:118-138, 193-204`).
-  Verified.
+  Verified. Fixed in #7.
 - LLM providers send the full input text to third-party APIs. The README does not
-  warn that inputs which still contain PII leave the machine. Code-read.
-- README says "57 tests"; the suite has 102.
+  warn that inputs which still contain PII leave the machine. Code-read. README note
+  added in #4.
+- README says "57 tests"; the suite has 102. Fixed in #3 (count removed).
 - RAT-Bench CLI: an unsupported `--language` or `--nq` above 9 raises a traceback.
   `SQLiteDataProvider` interpolates `--sqlite-table` into SQL
-  (`rat_bench/providers.py:55,61`); local CLI input only, low risk. Code-read.
+  (`rat_bench/providers.py:55,61`); local CLI input only, low risk. Code-read. Fixed
+  in #5.
 
 ## Part B: features to add or extend
 
 ### B1. Real, pluggable population data
 
-Status: open. Effort: medium to large. Depends on A2's short-term fix.
+Status: done in #6 (`population_db`, `reid-score build-db`, `docs/POPULATION_DATA.md`).
+Shipping real data by default is `docs/FEATURES.md` F8. Effort: medium to large.
 
 What: expose a `demographic_db_path` (or `population_source`) on `ReidScorer`, the
 CLI and the API. `DemographicLookup` already accepts `db_path` but `ReidScorer`
@@ -297,7 +309,7 @@ shipping a builder plus a downloadable artifact keeps the zero-dependency promis
 
 ### B2. Dataset inputs for `scan`: JSONL, CSV and directories
 
-Status: open. Effort: small to medium. No dependencies.
+Status: open, see `docs/FEATURES.md` F2. Effort: small to medium. No dependencies.
 
 What: `reid-score scan data.jsonl --field text`, `scan data.csv --column notes`,
 `scan dir/ --recursive`, with each result labelled `file:line` or `file:row`.
@@ -309,7 +321,9 @@ Why high: small change, unlocks the main workflow, all stdlib (`csv`, `json`).
 
 ### B3. Provenance and coverage on every result
 
-Status: open. Effort: small. Pairs with A2 and A6.
+Status: partly done in #4 and #6 (`attacker_used`, `fallback_reason`,
+`population_coverage`, `unmatched_quasi_identifiers`); the rest is `docs/FEATURES.md` F3.
+Effort: small.
 
 What: add fields to `ScoreResult`, CLI output and reports: attacker actually used,
 fallback reason, model, geography and data source/version, which QIs matched the
@@ -322,7 +336,7 @@ Why high: cheap, and it makes every other limitation visible instead of silent.
 
 ### B4. Custom identifier patterns and evidence offsets
 
-Status: open. Effort: medium. Builds on A1.
+Status: open, see `docs/FEATURES.md` F4. Effort: medium. Builds on A1.
 
 What: let users register extra direct-identifier patterns (MRNs, employee IDs, case
 numbers, internal account formats) through a config file or constructor argument, and
@@ -336,7 +350,7 @@ The RAT-Bench `Registry` class could be reused for detector plugins.
 
 ### B5. Measure reid-score's own detection accuracy
 
-Status: open. Effort: medium. Depends on A5 fixes.
+Status: open, see `docs/FEATURES.md` F5. Effort: medium. A5 is fixed.
 
 What: a script and CI job that runs the (fixed) RAT-Bench generator against
 `ReidScorer`, reports recall and precision per identifier type for `rule_based`, and
@@ -350,7 +364,8 @@ regressions.
 
 ### B6. Production hardening for LLM providers
 
-Status: open. Effort: medium.
+Status: partly done in #3 (per-item batch errors); the rest is `docs/FEATURES.md` F6.
+Effort: medium.
 
 What: retries with backoff on 429/5xx, per-item error capture in `score_batch`
 instead of aborting, a configurable base URL (Azure OpenAI, OpenAI-compatible
@@ -363,7 +378,7 @@ kill the run.
 
 ### B7. Compliance reports that state method and limits
 
-Status: open. Effort: small to medium. Uses B3 fields; PDF needs A7.
+Status: open, see `docs/FEATURES.md` F7. Effort: small to medium. A7 is fixed.
 
 What: include input source labels, geography, provider/model, thresholds, data
 source and version, a methodology paragraph, and a limitations section (for example
@@ -380,9 +395,61 @@ score was produced is weak evidence.
 - Non-English and non-ASCII input to the core scorer: not tested.
 - Prompt injection from input text into the LLM attacker prompt
   (`prompt_engine.py` concatenates raw text): not examined in depth.
-- `publish-pypi.yml` release flow and wheel contents (whether the `.sqlite` files and
-  `data/README.md` ship in the wheel): not built or inspected.
+- `publish-pypi.yml` release flow and wheel contents: checked in the follow-up. The
+  wheel contains both `.sqlite` files, `data/README.md` and the entry points, and
+  `twine check` passes.
 - RAT-Bench metrics maths (`metrics.py`, `similarity.py` Jaro-Winkler, BLEU) was read
   but not checked against reference implementations.
 - `examples/` were read, not run.
 - The untracked `build/` directory in the repo root was not inspected.
+
+## Follow-up after the fixes (2026-09-24)
+
+Found while fixing Part A, or left over from it. Checked against the code after #7.
+
+### N1. Bundled sample still scores absent combinations as population 1
+
+Status: open. Severity: medium. Verified. Tracked as `docs/FEATURES.md` F8.
+
+With the unmatched-value rule from #6, a value missing from the table no longer counts
+as unique, but a combination of values that all exist and has no row still scores
+population 1. That is the right rule for real census data, but with the 9-row bundled
+sample it is an artifact: "Age 34 male nurse" (GB) and "A 45 year old male teacher."
+(US) score 0.850 HIGH. The README now says the bundled tables are a demonstration.
+
+### N2. `employer` and `education_level` have no population column
+
+Status: open. Severity: medium. Code-read.
+
+Both are quasi-identifiers (`attribute_parser.py` `CATEGORY_MAP`) but `cross_tab` has
+no column for them, so they are listed in `unmatched_quasi_identifiers` and add nothing
+to the score. An employer name is often highly identifying. Options: a column in the
+builder schema, or a fixed risk contribution for a named employer.
+
+### N3. Name detection heuristics have known false positives and misses
+
+Status: open. Severity: low to medium. Verified by the detectors work in #7.
+
+False positives: title-case phrases starting with a common first name ("Mark
+Scheme"), place names ending in surname-like words ("Victoria Park"), and "number +
+capitalised words + street suffix" ("4 Wheel Drive"). Misses: names after a locative
+word ("spoke to Jane Ward"), uncommon first names without a title or label. F5 in
+`docs/FEATURES.md` would measure these.
+
+### N4. Smaller leftovers
+
+Status: open. Severity: low.
+
+- HTTP API returns a generic 500 for a `BatchScoringError` in `/v1/score/batch` and
+  `/v1/report` (F6).
+- RAT-Bench LLM attacker returns all-unknown without notice when a reply cannot be
+  parsed, and the CLI output does not record attacker, provider or model (F11).
+- `ReidConfig.demographic_data` still says `"bundled"` when `population_db` is set
+  (F3).
+- Recommendations include direct-identifier tips for values below the confidence
+  threshold (`risk/recommendations.py`).
+- `AnthropicProvider` reads only the first content block (F6).
+- UK postcode and US ZIP detection run in every geography, because providers are not
+  told the geography.
+- `rat_bench/providers.py` `SQLiteDataProvider` never closes its connection.
+

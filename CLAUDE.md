@@ -2,17 +2,17 @@
 
 ## What this package is
 
-`reid-score` (v0.2.0, MIT, Python 3.10+, zero runtime dependencies) scores anonymised
-free text for re-identification risk. It returns a score in [0, 1], a rating
-(LOW/MEDIUM/HIGH/CRITICAL), the attributes an attacker could infer, recommendations,
-and optional GDPR/HIPAA/CCPA reports. It also bundles a RAT-Bench-style harness for
-benchmarking anonymisers on synthetic transcripts.
+`reid-score` (MIT, Python 3.10+, zero runtime dependencies, on PyPI; version in
+`pyproject.toml`) scores anonymised free text for re-identification risk. It returns a
+score in [0, 1], a rating (LOW/MEDIUM/HIGH/CRITICAL), the attributes an attacker could
+infer, recommendations, and optional GDPR/HIPAA/CCPA reports. It also bundles a
+RAT-Bench-style harness for benchmarking anonymisers on synthetic transcripts.
 
 Value proposition (README tagline): "You anonymised your data. reid-score tells you if
-it worked." In practice users rely on it for two things: no false LOW when identifiers
-remain, and a score that reflects how many real people match the leaked
-quasi-identifiers. Offline, deterministic `rule_based` mode is the default and the
-intended CI gate (`reid-score scan --fail-above`).
+it worked." Users rely on it for two things: no false LOW when identifiers remain, and
+a score that reflects how many real people match the leaked quasi-identifiers.
+Offline, deterministic `rule_based` mode is the default and the intended CI gate
+(`reid-score scan --fail-above`).
 
 Users (inferred, not stated anywhere): engineers anonymising text (transcripts,
 clinical notes, tickets, LLM training data) who want a CI gate; privacy/compliance
@@ -23,66 +23,88 @@ anonymisers via RAT-Bench.
 
 Scoring pipeline, called from `ReidScorer.score()` in `src/reid_score/scorer.py`:
 
-1. `attacker/engine.py` `AttackEngine.infer_attributes`: builds the prompt
-   (`prompt_engine.py`), calls a provider, parses the output with
-   `attribute_parser.py` (allowlist, confidence clamp, category fix-up, dedupe by
-   attribute). If parsing fails it silently re-runs `RuleBasedProvider`.
-2. `attacker/providers/`: `rule_based.py` (regex/keywords; the rule-based provider
-   pulls the text back out of the prompt after `"Text:"`), `openai.py`, `anthropic.py`,
-   `ollama.py` (all `urllib`, no SDKs). `provider_for_name()` in `engine.py` maps
-   names, including aliases `heuristic`, `mock`, `local`.
-3. `demographics/uniqueness.py` + `lookup.py`: quasi-identifiers at or above
-   `confidence_threshold` become `LOWER(col) = ?` filters on table `cross_tab` in
-   `data/{us,gb}/*.sqlite`. Zero matching rows are floored to population 1.
-4. `risk/calculator.py`: any direct identifier (`full_name`, `email`, `phone`,
-   `ssn_or_nin`, `address`) whose value is not the literal `unknown` gives 1.0.
-   Otherwise score = (1/population) x mean QI confidence. Thresholds 0.1/0.3/0.9.
+1. `attacker/engine.py` `AttackEngine.run()` returns `AttackResult` (attributes,
+   tokens, `attacker_used`, `fallback_reason`). It builds the prompt
+   (`prompt_engine.py`, per-attribute value formats), calls a provider, and parses
+   with `attribute_parser.py` (accepts `{"attributes": [...]}`, bare arrays, fenced or
+   embedded JSON). `normalize.py` maps placeholders (null, "N/A", "[REDACTED]", "XXX")
+   to `unknown` and normalises quasi values ("34" -> "30-39", "woman" -> "female").
+   Unparseable output falls back to `RuleBasedProvider` and is recorded; `strict=True`
+   raises instead. `resolve_model()` requires a model for non-rule-based providers.
+2. `attacker/providers/`: `rule_based.py` (regex/keywords, word lists in
+   `_lexicon.py`: names, addresses, DOB, ZIP, UK postcode, phone, SSN/NIN, email,
+   age, gender, occupation, marital status, sensitive groups), `openai.py`,
+   `anthropic.py`, `ollama.py` (all `urllib`). `rule_based` reads the text after the
+   first `"Text:"` in the prompt.
+3. `demographics/`: `lookup.py` `DemographicLookup.match()` drops QI values absent
+   from the `cross_tab` column (reported as unmatched) and queries the rest; a known
+   combination with zero rows is population 1. `uniqueness.py` `evaluate()` returns
+   `UniquenessResult` with `coverage` (full/partial/none/not_applicable).
+   `builder.py` builds population databases from microdata (`reid-score build-db`,
+   `acs-pums` preset). Geography is validated (`UK` -> `GB`).
+4. `risk/calculator.py`: a direct identifier (`full_name`, `email`, `phone`,
+   `ssn_or_nin`, `address`, `date_of_birth`) with a real value and confidence >=
+   `confidence_threshold` gives 1.0. Otherwise score = (1/population) x mean
+   confidence of used QIs. Rating thresholds 0.1/0.3/0.9.
 5. `risk/recommendations.py`, `risk/disparity.py`, `reports/{gdpr,hipaa,ccpa}.py`
-   (plain text bodies; `scorer.py` wraps them as JSON, HTML or a hand-built PDF).
+   (plain text bodies; `scorer.py` wraps them as JSON, escaped HTML, or a paginated
+   hand-built PDF in `_basic_pdf`). `score_batch` raises `BatchScoringError` with
+   partial results when items fail.
 
-Other entry points: `cli.py` (`reid-score scan FILES|- [--json] [--fail-above X]
-[--report gdpr|hipaa|ccpa]`), `api.py` (stdlib HTTP server, no console script:
-`python -m reid_score.api`, endpoints `/v1/score`, `/v1/score/batch`, `/v1/compare`,
-`/v1/report`, 1 MiB body cap), `rat_bench/` (`reid-rat-bench` CLI; pipeline =
-generator -> anonymizers -> attacker -> evaluator; plugins via `registry.py`).
+Other entry points: `cli.py` (subcommands `scan`, `serve`, `build-db`; exit 0 ok, 1
+`--fail-above` hit, 2 any error), `api.py` (stdlib HTTP server; `make_server(host,
+port, scorer)`; endpoints `/v1/score`, `/v1/score/batch`, `/v1/compare`, `/v1/report`;
+1 MiB body cap), `rat_bench/` (`reid-rat-bench` CLI; generator -> anonymizers ->
+attacker -> evaluator; plugins via `registry.py`; its LLM attacker has its own prompt
+and parser in `rat_bench/attacker.py`).
 
 ## Commands
 
 ```bash
 pip install -e .                                   # editable install, no deps
-python -m unittest discover -s tests -v            # 102 tests, ~2 s, no network
+PYTHONPATH=src python -m unittest discover -s tests   # ~280 tests, ~6 s, no network
 reid-score scan file.txt --geography GB --json     # CLI
-python -m reid_score.api                           # API on 127.0.0.1:8080
+reid-score serve --port 8080                       # HTTP API
+reid-score build-db psam_p06.csv ca.sqlite --geography US-CA --preset acs-pums
 reid-rat-bench --path tests/fixtures/rat_bench_pums_sample.csv --json
 python scripts/build_sample_data.py                # regenerates both bundled .sqlite files
 ```
 
 CI (`.github/workflows/test.yml`) runs the unittest suite on 3.10-3.12, Ubuntu and
-macOS. `publish-pypi.yml` publishes on `v*.*.*` tags. Tests use `unittest`, not pytest.
+macOS. Tests use `unittest`, not pytest.
+
+Releasing: bump `version` in `pyproject.toml`, move CHANGELOG "Unreleased" entries
+under a dated version heading, merge as `chore(release): vX.Y.Z`, then push tag
+`vX.Y.Z` on that commit. `publish-pypi.yml` builds and publishes to PyPI on `v*.*.*`
+tags (trusted publishing); also create a GitHub release for the tag. Build locally
+from outside the repo root (`python -m build <repo>`): the untracked `build/`
+directory in the root shadows the `build` module.
 
 ## Gotchas
 
-- The bundled "census" data is 9 hand-typed rows per country
-  (`scripts/build_sample_data.py`). Any QI combination not in those rows is floored to
-  population 1 and scores HIGH/CRITICAL; combinations in the rows score LOW. Scores
-  for quasi-identifiers are not meaningful yet. See docs/REVIEW.md A2.
-- `rule_based` does not detect names, street addresses, US ZIP codes or dates of
-  birth. Such text scores 0.0 LOW (docs/REVIEW.md A1).
-- `ReidScorer` accepts any geography string. Anything but `GB` uses the US file but
-  filters on the given code, so `"UK"` or `"FR"` match nothing and every QI scores HIGH.
-- UK postcode detection runs in both geographies and is case-insensitive, so tokens
-  like "M25 2nd" become postcode area `M`.
-- LLM providers default to model `heuristic-v1` unless `llm_model` is passed.
-- `tests/fixtures/rat_bench_pums_sample.csv` is column-shifted (unquoted comma in
-  `date_of_birth`) and the CSV loader silently drops the overflow field.
-- Scoring expectations in tests (`tests/fixtures/known_*_risk.json`) are tuned to the
-  9-row tables. Changing the bundled data will break them; that is expected.
+- Use `PYTHONPATH=src` when running tests from a git worktree or second checkout; the
+  editable install may point at a different checkout.
+- The bundled population tables are a 9-row illustrative sample per country, marked
+  in their `metadata` table. A combination of known values missing from them still
+  scores population 1 (for example "Age 34 male nurse" is HIGH). Real scores need a
+  database from `reid-score build-db`. See `docs/POPULATION_DATA.md`.
+- `employer` and `education_level` are quasi-identifiers with no population column;
+  they always appear in `unmatched_quasi_identifiers`.
+- Test expectations in `tests/fixtures/known_*_risk.json` are tuned to the 9-row
+  tables. Changing the bundled data will break them; that is expected.
+- Name detection in `rule_based` is heuristic (first-name list, titles, labels) with
+  known false positives ("Mark Scheme", "4 Wheel Drive"). Add regression tests to
+  `tests/test_rule_based_detectors.py` when changing it.
+- New `ScoreResult` fields go at the end with defaults; `to_dict()` output is part of
+  the CLI `--json` and API contract.
 - CHANGELOG follows Keep a Changelog; add entries under "Unreleased".
 
-## Review findings
+## Review findings and feature backlog
 
-Full prioritised findings (bugs and feature gaps, with status) are in
-`docs/REVIEW.md`. Update item statuses there when fixing something.
+- `docs/REVIEW.md`: prioritised findings with status. All original Part A items are
+  fixed; open follow-ups are N1 to N4 at the end.
+- `docs/FEATURES.md`: agent-ready feature briefs (F2 to F11). To build one, read its
+  entry and follow the instructions at the top of that file.
 
 ## Working Principles
 
