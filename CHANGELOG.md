@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model for `--attacker llm`. API keys come from
   `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 - RAT-Bench anonymizer registry keys `regex` and `capitalised_redactor`.
+- Pluggable population data: `ReidScorer(population_db=...)` and
+  `--population-db` on `scan` and `serve` score against your own population
+  database.
+- `reid-score build-db` (also `python -m reid_score.demographics.builder` and
+  `build_population_db()`) builds a population database from person-level
+  microdata CSV, with an `acs-pums` preset for the ACS PUMS person file,
+  column maps, value maps, and survey weights.
+- `ScoreResult.population_coverage` and
+  `ScoreResult.unmatched_quasi_identifiers` show which quasi-identifiers the
+  population table could use.
+- Optional `metadata` table in population databases, read with
+  `DemographicLookup.metadata()`.
+- `docs/POPULATION_DATA.md` documents the table format, coverage rules, and
+  how to build a database.
 
 ### Changed
 - `ReidScorer.score_batch` scores every item even when some fail, instead of
@@ -69,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 - `reid-rat-bench` validates `--records`, `--nq`, `--ni`, and `--language` up
   front and reports runtime errors on one line instead of a traceback.
+- Quasi-identifier values that do not occur in the population table are left
+  out of the population query instead of scoring as population 1. "She is 72
+  years old." now scores LOW with partial coverage instead of HIGH. When no
+  quasi-identifier matches, the population component of the score is 0.
+- The bundled US and GB tables carry a `metadata` table marking them as
+  illustrative samples, not census data. Their rows are unchanged, and the
+  README no longer describes them as census data.
+- `--geography` accepts any geography present in `--population-db`; with the
+  bundled data it accepts US, GB, or UK.
 
 ### Deprecated
 - RAT-Bench anonymizer keys `presidio_like`, `azure_like`, and `gpt_like`.
@@ -102,6 +125,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reid-rat-bench --attacker llm` always ran the `rule_based` provider.
 - The RAT-Bench SQLite provider no longer creates an empty database file
   when the path does not exist.
+
+- Unsupported geographies such as `FR` silently used the US table and scored
+  every quasi-identifier text HIGH. They now raise `ValueError`. Geography is
+  case-insensitive and `UK` is accepted as `GB`.
 
 ### Security
 - The RAT-Bench `SQLiteDataProvider` validates the table name and quotes

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from reid_score.api import make_server, serve_until_interrupted
+from reid_score.demographics import builder
 from reid_score.scorer import BatchScoringError, ReidScorer
 
 
@@ -42,7 +43,18 @@ def _port(raw: str) -> int:
 
 
 def _add_scorer_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--geography", default="US", choices=["US", "GB"])
+    parser.add_argument(
+        "--geography",
+        default="US",
+        help="US or GB (UK is accepted) with the bundled data, or any geography "
+        "present in --population-db (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--population-db",
+        metavar="PATH",
+        help="Population database built with 'reid-score build-db' "
+        "(default: the bundled illustrative sample)",
+    )
     parser.add_argument("--provider", default="rule_based")
     parser.add_argument(
         "--model",
@@ -95,6 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--port", type=_port, default=8080, help="Port to bind (default: %(default)s)"
     )
     _add_scorer_arguments(serve)
+
+    build_db = subparsers.add_parser(
+        "build-db",
+        help="Build a population database from person-level microdata CSV",
+        description="Build a population database from person-level microdata "
+        "CSV. See docs/POPULATION_DATA.md.",
+    )
+    builder.configure_parser(build_db)
     return parser
 
 
@@ -138,6 +158,7 @@ def _build_scorer(args: argparse.Namespace) -> ReidScorer:
         geography=args.geography,
         confidence_threshold=args.confidence_threshold,
         strict=args.strict,
+        population_db=args.population_db,
     )
 
 
@@ -249,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "serve":
             return _serve(args)
+        if args.command == "build-db":
+            return 2 if builder.run(args) else 0
         return _scan(args)
     except (ValueError, RuntimeError) as exc:
         # Unsupported providers, missing API keys and similar configuration
