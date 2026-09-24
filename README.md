@@ -172,6 +172,23 @@ The scoring methodology is grounded in established re-identification risk litera
 
 This repository also includes a RAT-Bench module (`src/reid_score/rat_bench/`) that reimplements the RAT-Bench evaluation framework for benchmark-style anonymisation assessment. The specific citation is pending verification; the implementation should be considered as inspired by, rather than canonical to, any specific publication.
 
+## RAT-Bench
+
+`reid-rat-bench` generates synthetic transcripts from a PUMS-like population file, runs anonymizers over them, attacks the output, and reports `r_succ`, mean risk, BLEU, and per-attribute recall for each anonymizer:
+
+```bash
+reid-rat-bench --path population.csv --json
+reid-rat-bench --path population.csv --attacker llm --attacker-provider openai --attacker-model <model>
+```
+
+The population CSV needs the columns `state_of_residence`, `gender`, `date_of_birth`, `race`, `marital_status`, `education_level`, `employment_status`, `occupation`, and `citizenship_status`. Rows with extra fields or missing values are rejected with the line number, so quote values that contain commas.
+
+The built-in anonymizers are simple baselines, not adapters for commercial products: `regex` redacts emails, phone numbers, SSNs, and card numbers, and `capitalised_redactor` redacts runs of capitalised words and numbers of two or more digits. The older keys `presidio_like`, `azure_like`, and `gpt_like` still work as deprecated aliases. Register your own anonymizer with `anonymizer_registry` (see `examples/register_custom_anonymizer.py`).
+
+With `--attacker llm`, the API key comes from the provider's environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) and the generated transcripts are sent to that provider. Transcript generation is English only: `es` and `zh-hans` are in the schema but raise an error until a generator for them exists.
+
+RAT-Bench results from 0.2.0 and earlier were computed on a sample fixture whose columns were shifted by one and are not comparable with later results.
+
 ## Determinism and Hallucination Controls
 
 - `rule_based` mode is fully deterministic: same input, same output, every time.

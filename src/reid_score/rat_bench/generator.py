@@ -7,8 +7,7 @@ import re
 from dataclasses import dataclass
 
 from reid_score.rat_bench.config import BenchmarkProfile, GenerationPolicy, paper_profile
-from reid_score.rat_bench.population import correctness_kappa, sample_weights_for_uniqueness
-from reid_score.rat_bench.prompts import build_prompt
+from reid_score.rat_bench.population import equivalence_class_sizes
 from reid_score.rat_bench.types import BenchmarkEntry, Profile
 
 
@@ -47,7 +46,13 @@ class TextGenerator:
 
 
 class TemplateTextGenerator(TextGenerator):
-    """Deterministic text generator implementing scenario and difficulty semantics."""
+    """Deterministic text generator implementing scenario and difficulty semantics.
+
+    The templates are English only. Other benchmark languages need a text
+    generator that actually writes in that language.
+    """
+
+    supported_languages: tuple[str, ...] = ("en",)
 
     def generate(
         self,
@@ -57,6 +62,12 @@ class TemplateTextGenerator(TextGenerator):
         scenario: str,
         language: str,
     ) -> str:
+        if language not in self.supported_languages:
+            raise ValueError(
+                f"TemplateTextGenerator only writes English ('en'), so language {language!r} "
+                "is not supported; pass a TextGenerator that writes in that language"
+            )
+
         def maybe_obfuscate(attr: str, value: str) -> str:
             if difficulty != "explicit_hard":
                 return value
@@ -136,18 +147,14 @@ class RATBenchGenerator:
         return self.rng.sample(list(self.schema.direct), k=ni)
 
     def _choose_record_for_attrs(self, attrs: list[str], theta0: float) -> dict[str, str]:
-        weights = sample_weights_for_uniqueness(self.rows, attrs)
-        population = list(zip(self.rows, weights, strict=True))
-        eligible = []
-        for row, _weight in population:
-            row_values = {a: row.get(a, "") for a in attrs}
-            if correctness_kappa(self.rows, row_values) >= theta0:
-                eligible.append(row)
+        # A row's correctness kappa is 1 / (size of its equivalence class), so
+        # one pass over the population gives every row's kappa and its
+        # uniqueness weight.
+        kappas = [1.0 / size for size in equivalence_class_sizes(self.rows, attrs)]
+        eligible = [row for row, kappa in zip(self.rows, kappas, strict=True) if kappa >= theta0]
         if eligible:
             return self.rng.choice(eligible)
-        rows = [x[0] for x in population]
-        probs = [x[1] for x in population]
-        return self.rng.choices(rows, weights=probs, k=1)[0]
+        return self.rng.choices(self.rows, weights=kappas, k=1)[0]
 
     def _generate_direct_identifiers(self, row: dict[str, str], index: int) -> dict[str, str]:
         first = "Alex" if row.get("gender", "").lower() == "male" else "Taylor"
@@ -197,14 +204,6 @@ class RATBenchGenerator:
 
         a_direct = self._sample_direct_attrs(ni=ni, difficulty=difficulty)
         target_attributes = [*a_indirect, *a_direct]
-
-        _prompt = build_prompt(
-            profile={**profile.indirect, **profile.direct},
-            target_attributes=target_attributes,
-            difficulty=difficulty,
-            scenario=scenario,
-            language=language,
-        )
 
         text = self.text_generator.generate(profile, target_attributes, difficulty, scenario, language)
 

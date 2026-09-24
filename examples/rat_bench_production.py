@@ -20,7 +20,7 @@ def main() -> None:
     out = pipeline.run(
         RATBenchPipelineConfig(
             profile="production",
-            anonymizer_names=["presidio_like", "azure_like", "gpt_like"],
+            anonymizer_names=["regex", "capitalised_redactor"],
         )
     )
 

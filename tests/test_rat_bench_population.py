@@ -5,6 +5,7 @@ import unittest
 from reid_score.rat_bench.population import (
     correctness_kappa,
     equivalence_class_size,
+    equivalence_class_sizes,
     sample_weights_for_uniqueness,
 )
 
@@ -30,6 +31,15 @@ class RATBenchPopulationTests(unittest.TestCase):
             {"state_of_residence": "California", "gender": "Female"},
         )
         self.assertAlmostEqual(0.5, kappa)
+
+    def test_equivalence_class_sizes_per_row(self) -> None:
+        attrs = ["state_of_residence", "gender"]
+        self.assertEqual([2, 2, 1], equivalence_class_sizes(self.rows, attrs))
+        self.assertEqual(
+            [equivalence_class_size(self.rows, {a: row[a] for a in attrs}) for row in self.rows],
+            equivalence_class_sizes(self.rows, attrs),
+        )
+        self.assertEqual([3, 3, 3], equivalence_class_sizes(self.rows, []))
 
     def test_uniqueness_weights(self) -> None:
         weights = sample_weights_for_uniqueness(self.rows, ["state_of_residence", "gender"])
