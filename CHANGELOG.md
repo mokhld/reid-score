@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DemographicLookup.metadata()`.
 - `docs/POPULATION_DATA.md` documents the table format, coverage rules, and
   how to build a database.
+- The `rule_based` attacker detects full names (after titles such as Mr, Ms,
+  Dr and labels such as "Name:" or "Patient", or a common US/UK first name
+  followed by a surname), street addresses and PO boxes, dates of birth next
+  to a birth cue, US ZIP and ZIP+4 codes after a state or "zip" label, and
+  explicit ethnicity, religion, and sexual orientation descriptions, so
+  disparate-impact flags can fire in the default mode.
 
 ### Changed
 - `ReidScorer.score_batch` scores every item even when some fail, instead of
@@ -129,6 +135,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unsupported geographies such as `FR` silently used the US table and scored
   every quasi-identifier text HIGH. They now raise `ValueError`. Geography is
   case-insensitive and `UK` is accepted as `GB`.
+
+- Texts that still contain a person's name, street address, or date of birth
+  no longer score 0.0 LOW in the default `rule_based` mode. "Patient John
+  Smith lives at 42 Elm Street" now scores 1.0 CRITICAL.
+- UK postcode detection is case-sensitive and requires a complete, valid
+  postcode, so "M25 2nd exit" and "Q3 2nd floor" are no longer postcodes.
+- Occupation, medical-condition, and marital-status keywords match whole
+  words: "nursery" is no longer a nurse, "civil engineering" is no longer an
+  engineer, "the sign of Cancer" is no longer a diagnosis, and "unmarried" is
+  no longer married.
 
 ### Security
 - The RAT-Bench `SQLiteDataProvider` validates the table name and quotes
