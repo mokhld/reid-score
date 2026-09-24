@@ -14,6 +14,7 @@ class RecommendationEngine:
         "phone": "Remove phone numbers, including partially masked variants.",
         "ssn_or_nin": "Fully remove SSN/NIN values; partial masking is insufficient.",
         "address": "Generalize exact address to city or region level.",
+        "date_of_birth": "Remove dates of birth; keep at most the year if needed.",
     }
 
     QI_TIPS = {

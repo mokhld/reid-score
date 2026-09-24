@@ -162,6 +162,18 @@ class CLIErrorTests(unittest.TestCase):
         for line in proc.stderr.splitlines():
             self.assertTrue(line.startswith("reid-score: error: "), line)
 
+    def test_llm_provider_without_model_is_clean_error(self) -> None:
+        # --model has no default, so a placeholder model name is never sent
+        # to a real API.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "a.txt"
+            p.write_text("Email a@b.com", encoding="utf-8")
+            proc = _run_cli("scan", str(p), "--provider", "anthropic")
+        self.assertEqual(2, proc.returncode)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertIn("llm_model is required", proc.stderr)
+        self.assertIn("--model", proc.stderr)
+
     def test_batch_failure_names_each_failed_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             ok = Path(tmpdir) / "ok.txt"

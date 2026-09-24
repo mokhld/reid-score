@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from reid_score.attacker import AttackEngine
-from reid_score.attacker.engine import provider_for_name
+from reid_score.attacker.engine import provider_for_name, resolve_model
 from reid_score.demographics import DemographicLookup, UniquenessCalculator
 from reid_score.reports import render_ccpa, render_gdpr, render_hipaa
 from reid_score.risk import RecommendationEngine, RiskCalculator, disparity_flags
@@ -26,12 +26,14 @@ class ReidScorer:
     def __init__(
         self,
         llm_provider: str = "rule_based",
-        llm_model: str = "heuristic-v1",
+        llm_model: str | None = None,
         geography: str = "US",
         confidence_threshold: float = 0.5,
         demographic_data: str = "bundled",
         llm_api_key: str | None = None,
+        strict: bool = False,
     ) -> None:
+        llm_model = resolve_model(llm_provider, llm_model)
         self.config = ReidConfig(
             llm_provider=llm_provider,
             llm_model=llm_model,
@@ -40,16 +42,17 @@ class ReidScorer:
             demographic_data=demographic_data,
         )
         provider = provider_for_name(llm_provider, api_key=llm_api_key)
-        self.attacker = AttackEngine(provider=provider, model=llm_model)
+        self.attacker = AttackEngine(provider=provider, model=llm_model, strict=strict)
         self.lookup = DemographicLookup(geography=geography, data_mode=demographic_data)
         self.uniqueness = UniquenessCalculator(self.lookup, confidence_threshold)
-        self.risk = RiskCalculator()
+        self.risk = RiskCalculator(confidence_threshold)
         self.recommendations = RecommendationEngine()
 
     def score(self, text: str) -> ScoreResult:
         start = time.perf_counter()
 
-        attributes, tokens_used = self.attacker.infer_attributes(text)
+        attack = self.attacker.run(text)
+        attributes = attack.attributes
         uniqueness, population_count, _, confidence_weight = self.uniqueness.compute(attributes)
         score, rating, direct_ids = self.risk.score(attributes, uniqueness, confidence_weight)
 
@@ -67,7 +70,9 @@ class ReidScorer:
             recommendations=recommendations,
             disparate_impact_flags=disparate_flags,
             processing_time_ms=elapsed_ms,
-            llm_tokens_used=tokens_used,
+            llm_tokens_used=attack.tokens_used,
+            attacker_used=attack.attacker_used,
+            fallback_reason=attack.fallback_reason,
         )
 
     def score_batch(self, texts: list[str], concurrency: int = 5) -> list[ScoreResult]:

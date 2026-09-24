@@ -44,8 +44,18 @@ def _port(raw: str) -> int:
 def _add_scorer_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--geography", default="US", choices=["US", "GB"])
     parser.add_argument("--provider", default="rule_based")
-    parser.add_argument("--model", default="heuristic-v1")
+    parser.add_argument(
+        "--model",
+        help="Model name; required for openai, anthropic and ollama "
+        "(rule_based uses heuristic-v1)",
+    )
     parser.add_argument("--confidence-threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail instead of falling back to rule_based when LLM output "
+        "cannot be parsed",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -127,6 +137,7 @@ def _build_scorer(args: argparse.Namespace) -> ReidScorer:
         llm_model=args.model,
         geography=args.geography,
         confidence_threshold=args.confidence_threshold,
+        strict=args.strict,
     )
 
 
@@ -196,6 +207,8 @@ def _scan(args: argparse.Namespace) -> int:
             )
             if result.direct_identifiers_found:
                 line += " direct=" + ",".join(result.direct_identifiers_found)
+            if result.fallback_reason:
+                line += f" attacker={result.attacker_used} (fallback: {result.fallback_reason})"
             print(line)
             for rec in result.recommendations[:3]:
                 print(f"  - {rec}")
