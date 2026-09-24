@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import sys
 import traceback
@@ -72,10 +73,20 @@ def handle_report_request(scorer: ReidScorer, payload: dict[str, Any]) -> dict[s
     return {"report": report}
 
 
+@functools.lru_cache(maxsize=1)
+def _default_scorer() -> ReidScorer:
+    """Rule-based US scorer for servers that were not given one, built on first use."""
+    return ReidScorer(llm_provider="rule_based", geography="US")
+
+
 class ReidAPIHandler(BaseHTTPRequestHandler):
     """HTTP request handler exposing reid-score endpoints."""
 
-    scorer = ReidScorer(llm_provider="rule_based")
+    @property
+    def scorer(self) -> ReidScorer:
+        """The server's scorer, or a default rule-based US scorer if it has none."""
+        scorer = getattr(self.server, "scorer", None)
+        return scorer if scorer is not None else _default_scorer()
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -105,6 +116,9 @@ class ReidAPIHandler(BaseHTTPRequestHandler):
             payload = json.loads(data.decode("utf-8"))
         except Exception:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON payload"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "JSON body must be an object"})
             return
 
         try:
@@ -136,10 +150,45 @@ class ReidAPIHandler(BaseHTTPRequestHandler):
             )
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
-    server = ThreadingHTTPServer((host, port), ReidAPIHandler)
-    print(f"reid-score API listening on http://{host}:{port}")
-    server.serve_forever()
+class ReidHTTPServer(ThreadingHTTPServer):
+    """Threaded HTTP server that carries the scorer its request handlers use."""
+
+    def __init__(
+        self, server_address: tuple[str, int], scorer: ReidScorer | None = None
+    ) -> None:
+        super().__init__(server_address, ReidAPIHandler)
+        self.scorer = scorer
+
+
+def make_server(
+    host: str = "127.0.0.1", port: int = 8080, scorer: ReidScorer | None = None
+) -> ReidHTTPServer:
+    """Bind a server to host and port without starting it.
+
+    Requests are scored with ``scorer``, or with a default rule-based US
+    scorer when it is None. Port 0 picks a free port; read the bound port
+    from ``server.server_address``.
+    """
+    return ReidHTTPServer((host, port), scorer)
+
+
+def serve_until_interrupted(server: ThreadingHTTPServer) -> None:
+    """Serve requests until Ctrl+C, then close the listening socket."""
+    host, port = server.server_address[:2]
+    print(f"reid-score API listening on http://{host}:{port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+def run_server(
+    host: str = "127.0.0.1", port: int = 8080, scorer: ReidScorer | None = None
+) -> None:
+    """Bind a server and serve requests until Ctrl+C."""
+    serve_until_interrupted(make_server(host, port, scorer))
 
 
 if __name__ == "__main__":

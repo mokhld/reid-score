@@ -103,7 +103,7 @@ result.llm_tokens_used          # int
 
 ### `scorer.score_batch(texts, concurrency=5) -> list[ScoreResult]`
 
-Score multiple texts concurrently using a thread pool.
+Score multiple texts concurrently using a thread pool. Every item is attempted. If any item fails, `reid_score.BatchScoringError` is raised after the batch finishes: `.results` holds one entry per input (`None` where it failed) and `.errors` maps each failed index to its exception.
 
 ### `scorer.compare(original, anonymized) -> CompareResult`
 
@@ -189,7 +189,7 @@ pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-57 tests covering the scoring pipeline, attacker providers, demographic lookups, risk calculation, CLI, API, RAT-Bench generator, evaluator, metrics, and pipeline.
+The suite covers the scoring pipeline, attacker providers, demographic lookups, risk calculation, reports, CLI, HTTP API, and the RAT-Bench generator, evaluator, metrics, and pipeline. It needs no network access.
 
 ## CLI
 
@@ -208,6 +208,37 @@ To gate a CI pipeline, use `--fail-above`: the command exits with status 1 if an
 ```bash
 reid-score scan release_docs/*.txt --fail-above 0.7 --json > risk.json
 ```
+
+Exit status is 0 on success, 1 when an input scores above `--fail-above`, and 2 for usage, configuration, input, or scoring errors (for example an unreadable file, an unsupported provider, or a missing API key). Errors are printed as a single `reid-score: error: ...` line on stderr.
+
+Compliance reports go to stdout or to a file. With `--json`, a JSON or HTML report is embedded in the output under a `"report"` key so stdout stays one JSON document. PDF reports need `--report-output`:
+
+```bash
+reid-score scan notes/*.txt --report gdpr --report-format pdf --report-output dpia.pdf
+```
+
+## HTTP API
+
+A small self-hosted JSON API built on the standard library:
+
+```bash
+reid-score serve --host 127.0.0.1 --port 8080 --geography GB
+```
+
+`serve` accepts the same `--geography`, `--provider`, `--model`, and `--confidence-threshold` options as `scan`. `python -m reid_score.api` also starts a server on 127.0.0.1:8080 with the `rule_based` provider and US data. From Python, `reid_score.api.make_server(host, port, scorer)` returns an unstarted server that uses your own `ReidScorer`.
+
+All endpoints take a POST with a JSON object body of at most 1 MiB:
+
+| Endpoint | Body | Returns |
+|----------|------|---------|
+| `/v1/score` | `{"text": "..."}` | One score result |
+| `/v1/score/batch` | `{"texts": ["...", "..."]}` | `results` and `summary` |
+| `/v1/compare` | `{"original": "...", "anonymized": "..."}` | Risk reduction |
+| `/v1/report` | `{"results": [{"text": "..."}], "standard": "gdpr", "format": "json"}` | JSON report object, `{"report": "<html>..."}`, or `{"report_base64": "...", "encoding": "base64"}` for PDF |
+
+Errors come back as `{"error": "..."}`: 400 for invalid JSON, a body that is not an object, or a bad Content-Length; 413 for bodies over 1 MiB; 422 for invalid fields; 404 for unknown paths; 500, with no internal detail, for anything else.
+
+The server has no authentication or TLS. Keep it bound to localhost or put it behind a reverse proxy that provides both. With an LLM provider, submitted text is sent to that provider.
 
 ## Project Structure
 

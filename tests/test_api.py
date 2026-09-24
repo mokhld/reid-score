@@ -14,6 +14,7 @@ from reid_score.api import (
     handle_compare_request,
     handle_report_request,
     handle_score_request,
+    make_server,
 )
 from reid_score.scorer import ReidScorer
 
@@ -120,6 +121,20 @@ class APIHTTPTests(unittest.TestCase):
         self.assertEqual(400, status)
         self.assertEqual("Invalid JSON payload", json.loads(body)["error"])
 
+    def test_non_object_json_returns_400(self) -> None:
+        for raw in [b"[1]", b'"text"', b"null", b"42"]:
+            for path in ["/v1/score", "/v1/score/batch", "/v1/compare", "/v1/report"]:
+                status, body = self._post(path, body=raw)
+                self.assertEqual(400, status, f"{path} {raw!r}")
+                self.assertEqual("JSON body must be an object", json.loads(body)["error"])
+
+    def test_server_without_scorer_uses_default_us_scorer(self) -> None:
+        status, body = self._post(
+            "/v1/score", body=json.dumps({"text": "Email a@b.com"}).encode("utf-8")
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("US", json.loads(body)["geography"])
+
     def test_report_rejects_unknown_standard(self) -> None:
         body = json.dumps(
             {
@@ -180,6 +195,43 @@ class APIHTTPTests(unittest.TestCase):
         parsed = json.loads(body)
         self.assertEqual("Internal server error", parsed["error"])
         self.assertNotIn(secret, body.decode("utf-8"))
+
+
+class MakeServerTests(unittest.TestCase):
+    def _score_geography(self, server: ThreadingHTTPServer) -> str:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address[:2]
+            conn = HTTPConnection(host, port, timeout=5)
+            try:
+                conn.request(
+                    "POST",
+                    "/v1/score",
+                    body=json.dumps({"text": "Age 34 female in SW1A 1AA"}),
+                    headers={"Content-Type": "application/json"},
+                )
+                resp = conn.getresponse()
+                self.assertEqual(200, resp.status)
+                return json.loads(resp.read())["geography"]
+            finally:
+                conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_make_server_uses_given_scorer(self) -> None:
+        scorer = ReidScorer(llm_provider="rule_based", geography="GB")
+        server = make_server("127.0.0.1", 0, scorer)
+        self.assertIsInstance(server, ThreadingHTTPServer)
+        self.assertIs(scorer, server.scorer)
+        self.assertEqual("GB", self._score_geography(server))
+
+    def test_make_server_without_scorer_falls_back_to_default(self) -> None:
+        server = make_server("127.0.0.1", 0)
+        self.assertIsNone(server.scorer)
+        self.assertEqual("US", self._score_geography(server))
 
 
 if __name__ == "__main__":
