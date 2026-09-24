@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `reid-score serve` runs the HTTP API, with `--host`, `--port`, `--geography`,
+  `--provider`, `--model`, and `--confidence-threshold`.
+- `reid_score.api.make_server()` and a `scorer` argument on `run_server()`, so
+  the API can serve any configured `ReidScorer`.
+- `BatchScoringError`, raised by `ReidScorer.score_batch` when some items fail.
+  It carries `.results` (`None` for failed items) and `.errors` (item index to
+  exception).
+
+### Changed
+- `ReidScorer.score_batch` scores every item even when some fail, instead of
+  stopping at the first exception and discarding the other results.
+- `reid-score scan --json --report ...` embeds the report under a `"report"`
+  key, so stdout is a single JSON document.
+- `--report-format pdf` requires `--report-output`.
+- The CLI exits with status 2 for configuration, input, and scoring errors.
+  Unreadable input files previously exited with 1, which now only means a
+  `--fail-above` failure.
+- The HTTP API builds its default `rule_based`/US scorer on first use instead
+  of at import time.
+
+### Fixed
+- PDF reports paginate, so every record is included. Text past about 58 lines
+  was previously drawn off the page.
+- PDF text escapes backslashes and parentheses instead of rewriting
+  parentheses as brackets. Accented Latin characters render, other characters
+  are transliterated to ASCII where possible, and long lines wrap.
+- The CLI prints `reid-score: error: ...` instead of a traceback for
+  unsupported providers, missing API keys, provider network errors,
+  unwritable report paths, and server bind errors.
+- The HTTP API returns 400 instead of 500 for JSON bodies that are not objects.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added
