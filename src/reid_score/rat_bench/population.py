@@ -22,13 +22,18 @@ def correctness_kappa(rows: list[dict[str, str]], attributes: dict[str, str]) ->
     return 1.0 / equivalence_class_size(rows, attributes)
 
 
+def equivalence_class_sizes(rows: list[dict[str, str]], attrs: list[str]) -> list[int]:
+    """Return, for each row, the size of its equivalence class over ``attrs``.
+
+    Gives the same result as calling ``equivalence_class_size`` with each
+    row's own values, but counts all classes in one pass: O(N) in total
+    instead of O(N) per row.
+    """
+    signatures = [tuple(str(row.get(attr, "")).strip() for attr in attrs) for row in rows]
+    counts = Counter(signatures)
+    return [counts[s] for s in signatures]
+
+
 def sample_weights_for_uniqueness(rows: list[dict[str, str]], attrs: list[str]) -> list[float]:
     """Compute weighted sampling weights (1/n per equivalence class)."""
-    signature_counts: Counter[tuple[str, ...]] = Counter()
-    signatures: list[tuple[str, ...]] = []
-    for row in rows:
-        signature = tuple(str(row.get(attr, "")).strip() for attr in attrs)
-        signatures.append(signature)
-        signature_counts[signature] += 1
-
-    return [1.0 / signature_counts[s] for s in signatures]
+    return [1.0 / size for size in equivalence_class_sizes(rows, attrs)]

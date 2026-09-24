@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -28,7 +29,9 @@ class IdentityAnonymizer(Anonymizer):
 
 @dataclass(slots=True)
 class RegexAnonymizer(Anonymizer):
-    name: str = "Regex-NER"
+    """Replace emails, phone numbers, SSNs and card numbers matched by regex."""
+
+    name: str = "Regex redactor"
     token: str = "XXX"
 
     EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
@@ -46,7 +49,9 @@ class RegexAnonymizer(Anonymizer):
 
 @dataclass(slots=True)
 class AggressiveRedactionAnonymizer(Anonymizer):
-    name: str = "Aggressive-redactor"
+    """Replace every capitalised word run and every number of two or more digits."""
+
+    name: str = "Capitalised-word redactor"
 
     # Match a capitalised token followed by optional connector (space, hyphen,
     # apostrophe) and another capitalised token. Use \w with re.UNICODE so
@@ -65,9 +70,13 @@ class AggressiveRedactionAnonymizer(Anonymizer):
 
 @dataclass(slots=True)
 class LLMPromptAnonymizer(Anonymizer):
-    """Local lightweight anonymizer emulating an LLM prompt-based redactor."""
+    """Regex stand-in kept for backward compatibility. It is not an LLM.
 
-    name: str = "LLM-prompt"
+    It calls no model and produces exactly the output of ``RegexAnonymizer``.
+    Results from it say nothing about how an LLM-based anonymizer performs.
+    """
+
+    name: str = "Regex redactor"
 
     def anonymize(self, text: str) -> str:
         return RegexAnonymizer(name="tmp").anonymize(text)
@@ -86,22 +95,37 @@ class CallableAnonymizer(Anonymizer):
 
 anonymizer_registry: Registry[Anonymizer] = Registry("anonymizer")
 
+# Old registry keys named after commercial products the built-ins do not call.
+# They still resolve so existing configs keep working, to the key on the right.
+DEPRECATED_ANONYMIZER_ALIASES: dict[str, str] = {
+    "presidio_like": "regex",
+    "azure_like": "capitalised_redactor",
+    "gpt_like": "regex",
+}
+
+
+def _deprecated_alias_factory(alias: str, target: str) -> Callable[..., Anonymizer]:
+    def factory(**kwargs: object) -> Anonymizer:
+        warnings.warn(
+            f"anonymizer '{alias}' is deprecated; use '{target}'",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return anonymizer_registry.create(target, **kwargs)
+
+    return factory
+
 
 def register_default_anonymizers() -> None:
     if not anonymizer_registry.has("identity"):
         anonymizer_registry.register("identity", lambda **_: IdentityAnonymizer())
-    if not anonymizer_registry.has("presidio_like"):
-        anonymizer_registry.register("presidio_like", lambda **_: RegexAnonymizer(name="Presidio-like"))
-    if not anonymizer_registry.has("azure_like"):
-        anonymizer_registry.register(
-            "azure_like",
-            lambda **_: AggressiveRedactionAnonymizer(name="Azure-like"),
-        )
-    if not anonymizer_registry.has("gpt_like"):
-        anonymizer_registry.register(
-            "gpt_like",
-            lambda **_: LLMPromptAnonymizer(name="GPT-4.1-Anthropic-like"),
-        )
+    if not anonymizer_registry.has("regex"):
+        anonymizer_registry.register("regex", lambda **_: RegexAnonymizer())
+    if not anonymizer_registry.has("capitalised_redactor"):
+        anonymizer_registry.register("capitalised_redactor", lambda **_: AggressiveRedactionAnonymizer())
+    for alias, target in DEPRECATED_ANONYMIZER_ALIASES.items():
+        if not anonymizer_registry.has(alias):
+            anonymizer_registry.register(alias, _deprecated_alias_factory(alias, target))
 
 
 register_default_anonymizers()
@@ -114,7 +138,7 @@ def anonymizers_from_names(names: list[str]) -> list[Anonymizer]:
 def default_anonymizers(profile: str = "production") -> list[Anonymizer]:
     """Profile-aware default anonymizer sets."""
     if profile == "paper":
-        names = ["identity", "presidio_like", "azure_like", "gpt_like"]
+        names = ["identity", "regex", "capitalised_redactor"]
     else:
-        names = ["presidio_like", "azure_like", "gpt_like"]
+        names = ["regex", "capitalised_redactor"]
     return anonymizers_from_names(names)

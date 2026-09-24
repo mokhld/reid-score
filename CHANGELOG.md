@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table's vocabulary (for example "34", "30s", and "mid-thirties" become
   "30-39", "woman" becomes "female", "US" becomes "american", "registered
   nurse" becomes "nurse").
+- `reid-rat-bench --attacker-provider` and `--attacker-model` choose the
+  provider and model for `--attacker llm`. API keys come from
+  `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+- RAT-Bench anonymizer registry keys `regex` and `capitalised_redactor`.
 
 ### Changed
 - `ReidScorer.score_batch` scores every item even when some fail, instead of
@@ -51,6 +55,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `format: json`.
 - `OpenAIProvider` returns the model's message content unchanged instead of
   unwrapping the `attributes` key; the parser handles both shapes.
+- The RAT-Bench LLM attacker builds its own prompt from each entry's target
+  attributes and parses the reply itself, so it can return all 15 benchmark
+  attributes. Previously 9 of them could never be guessed.
+- Built-in RAT-Bench anonymizers are named for what they do: "Regex redactor"
+  and "Capitalised-word redactor". Default sets are identity, regex, and
+  capitalised_redactor (paper profile) and regex and capitalised_redactor
+  (production profile).
+- `TemplateTextGenerator` raises `ValueError` for languages other than `en`
+  instead of writing English text labelled as another language.
+- RAT-Bench record selection is linear in population size (about 12 ms per
+  entry at 20,000 rows; previously 264 ms at 800 rows). Seeded output is
+  unchanged.
+- `reid-rat-bench` validates `--records`, `--nq`, `--ni`, and `--language` up
+  front and reports runtime errors on one line instead of a traceback.
+
+### Deprecated
+- RAT-Bench anonymizer keys `presidio_like`, `azure_like`, and `gpt_like`.
+  They resolve to `regex`, `capitalised_redactor`, and `regex` and emit a
+  `DeprecationWarning`. `LLMPromptAnonymizer` is a regex stand-in kept only
+  so existing imports work.
 
 ### Fixed
 - PDF reports paginate, so every record is included. Text past about 58 lines
@@ -70,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ReidScorer(llm_provider="openai")` without a model no longer sends
   "heuristic-v1" to the API.
 - Unparseable LLM output no longer falls back to `rule_based` silently.
+- Unquoted commas in the RAT-Bench sample fixture's dates shifted every later
+  column by one (race read as "1994"). RAT-Bench results from 0.2.0 and
+  earlier were computed on the shifted data and are not comparable.
+- RAT-Bench CSV, SQLite, and in-memory providers raise `ValueError` for rows
+  with extra fields or missing values instead of loading them silently.
+- `reid-rat-bench --attacker llm` always ran the `rule_based` provider.
+- The RAT-Bench SQLite provider no longer creates an empty database file
+  when the path does not exist.
+
+### Security
+- The RAT-Bench `SQLiteDataProvider` validates the table name and quotes
+  identifiers instead of interpolating `--sqlite-table` into SQL.
 
 ## [0.2.0] - 2026-08-12
 
