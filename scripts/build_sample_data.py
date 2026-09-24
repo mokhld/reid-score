@@ -1,38 +1,20 @@
-"""Build bundled SQLite cross-tab data for US and GB demo geographies."""
+"""Build the bundled US and GB sample databases.
+
+These are illustrative 9-row samples, not census data. The schema comes from
+reid_score.demographics.builder so the bundled files match what the builder
+writes.
+"""
 
 from __future__ import annotations
 
-import sqlite3
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "src" / "reid_score" / "data"
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS cross_tab (
-    geography TEXT NOT NULL,
-    age_range TEXT,
-    gender TEXT,
-    ethnicity TEXT,
-    occupation TEXT,
-    postcode_district TEXT,
-    marital_status TEXT,
-    nationality TEXT,
-    count INTEGER NOT NULL,
-    PRIMARY KEY (
-        geography,
-        age_range,
-        gender,
-        ethnicity,
-        occupation,
-        postcode_district,
-        marital_status,
-        nationality
-    )
-);
-CREATE INDEX IF NOT EXISTS idx_cross_tab_geo ON cross_tab(geography);
-CREATE INDEX IF NOT EXISTS idx_cross_tab_qi ON cross_tab(geography, age_range, gender, occupation, postcode_district);
-"""
+sys.path.insert(0, str(ROOT / "src"))
+from reid_score.demographics.builder import SCHEMA_VERSION, write_database  # noqa: E402
 
 
 def build_us(db_path: Path) -> None:
@@ -70,18 +52,19 @@ def _write_rows(db_path: Path, rows: list[tuple]) -> None:
     if db_path.exists():
         db_path.unlink()
 
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(SCHEMA_SQL)
-        conn.executemany(
-            """
-            INSERT INTO cross_tab (
-                geography, age_range, gender, ethnicity, occupation,
-                postcode_district, marital_status, nationality, count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-        conn.commit()
+    # No build timestamp, so regenerating gives the same file.
+    metadata = {
+        "source_label": "illustrative sample, not census data",
+        "illustrative": "true",
+        "geography": rows[0][0],
+        "note": (
+            f"{len(rows)} hand-typed illustrative rows for tests and demos. The counts "
+            "are not census figures. Build a real table with python -m "
+            "reid_score.demographics.builder (see docs/POPULATION_DATA.md)."
+        ),
+        "schema_version": SCHEMA_VERSION,
+    }
+    write_database(db_path, rows, metadata)
 
 
 def main() -> None:

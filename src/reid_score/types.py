@@ -51,6 +51,10 @@ class ScoreResult:
     llm_tokens_used: int = 0
     attacker_used: str = "rule_based"
     fallback_reason: str | None = None
+    # "full", "partial", "none" (QIs found, none in the population table) or
+    # "not_applicable" (no QIs). See docs/POPULATION_DATA.md.
+    population_coverage: str = "not_applicable"
+    unmatched_quasi_identifiers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)

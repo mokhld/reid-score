@@ -10,12 +10,12 @@ Given any text, it returns a risk score in `[0.0, 1.0]`, a risk rating, the attr
 
 ```
 Anonymised Text → Attribute Inference → Population Uniqueness → Risk Score + Report
-                  (LLM or rule-based)   (bundled census data)
+                  (LLM or rule-based)   (population table)
 ```
 
 1. **Attribute inference.** A simulated attacker (LLM or deterministic rule-based) extracts personal attributes from the text — direct identifiers (email, phone, SSN) and quasi-identifiers (age, gender, occupation, postcode).
 
-2. **Population uniqueness.** Inferred quasi-identifiers are looked up against bundled demographic cross-tabulation data (US Census ACS / UK ONS Census 2021) to estimate how many people share that combination.
+2. **Population uniqueness.** Inferred quasi-identifiers are looked up in a population table to estimate how many people share that combination. A small illustrative table ships with the package; build a real one from census microdata with `reid-score build-db` (see [Population data](#population-data)).
 
 3. **Risk scoring.** Direct identifiers force maximum risk (`1.0`). Quasi-identifier risk is `1 / population_count`, weighted by attacker confidence. Final score: `max(direct_leak, weighted_uniqueness)`.
 
@@ -82,10 +82,11 @@ LLM providers send the full input text to the provider. If the text may still co
 |-----------|---------|-------------|
 | `llm_provider` | `"rule_based"` | `rule_based`, `openai`, `anthropic`, or `ollama` |
 | `llm_model` | `None` | Model identifier. Required for `openai`, `anthropic`, and `ollama`; `rule_based` uses `heuristic-v1` |
-| `geography` | `"US"` | `US` or `GB` — selects the bundled demographic dataset |
+| `geography` | `"US"` | `US` or `GB` (`UK` is accepted) with the bundled data, or any geography present in `population_db`. Anything else raises `ValueError` |
 | `confidence_threshold` | `0.5` | Minimum attacker confidence for a quasi-identifier or direct identifier to count |
 | `demographic_data` | `"bundled"` | Data source mode (currently `bundled` only) |
 | `llm_api_key` | `None` | Explicit API key (overrides environment variable) |
+| `population_db` | `None` | Path to a population database built with `reid-score build-db`. Default: the bundled illustrative sample |
 | `strict` | `False` | Raise `RuntimeError` instead of falling back to `rule_based` when LLM output cannot be parsed |
 
 ### `scorer.score(text) -> ScoreResult`
@@ -98,6 +99,8 @@ result.rating                   # Rating.LOW | MEDIUM | HIGH | CRITICAL
 result.direct_identifiers_found # ['email', 'phone', ...]
 result.inferred_attributes      # list[InferredAttribute]
 result.population_match_estimate # int
+result.population_coverage      # 'full', 'partial', 'none' or 'not_applicable'
+result.unmatched_quasi_identifiers # quasi-identifiers the population table could not use
 result.recommendations          # list[str]
 result.disparate_impact_flags   # list[str]
 result.processing_time_ms       # int
@@ -134,7 +137,7 @@ Generate compliance reports. Standards: `gdpr`, `hipaa`, `ccpa`. Formats: `json`
 
 **Direct identifiers** (`full_name`, `email`, `phone`, `ssn_or_nin`, `address`, `date_of_birth`) with a real value and attacker confidence at or above `confidence_threshold` force the score to `1.0`: any direct identifier is a full re-identification. Placeholders such as `null`, `"N/A"`, `"not mentioned"`, `[REDACTED]`, or `XXX` count as unknown.
 
-**Quasi-identifiers** (`age_range`, `gender`, `ethnicity`, `occupation`, `postcode_district`, `marital_status`, `nationality`) are looked up in the demographic cross-tabulation. Risk = `1 / population_count`, weighted by mean attacker confidence.
+**Quasi-identifiers** (`age_range`, `gender`, `ethnicity`, `occupation`, `postcode_district`, `marital_status`, `nationality`) are looked up in the population table. Risk = `1 / population_count`, weighted by the mean confidence of the quasi-identifiers used. A value that does not occur in the table (for example an occupation the table has no row for) is left out of the query and listed in `unmatched_quasi_identifiers`, rather than being treated as unique. If every value occurs but the combination has no rows, the population is 1. `population_coverage` says whether all, some, or none of the quasi-identifiers were used.
 
 **Final score** = `max(direct_leak_score, weighted_uniqueness_score)`.
 
@@ -166,7 +169,7 @@ The scoring methodology is grounded in established re-identification risk litera
 |---------|--------|---------------|
 | Direct vs quasi-identifier taxonomy | Sweeney (2000, 2002) | `DIRECT_ATTRIBUTES` / `category == "quasi"` |
 | Population uniqueness = 1/k | El Emam & Dankar (2008) | `1.0 / max(1, count)` |
-| Census cross-tabulation lookup | Dankar et al. (2012) | Bundled SQLite databases |
+| Census cross-tabulation lookup | Dankar et al. (2012) | SQLite population tables built from microdata (`reid-score build-db`) |
 | Prosecutor attacker model | El Emam (2011) | Single-text risk scoring |
 | Correctness kappa | Rocher et al. (2019) | `correctness_kappa()` in RAT-Bench |
 
@@ -195,14 +198,18 @@ RAT-Bench results from 0.2.0 and earlier were computed on a sample fixture whose
 - The attribute parser enforces a known-attribute allowlist, clamps confidence to `[0.0, 1.0]`, normalises categories to canonical values, and deduplicates deterministically.
 - Missing or invalid provider credentials, and a missing model name, raise immediately. A fallback to `rule_based` after unparseable LLM output is recorded on the result, never silent.
 
-## Bundled Demographic Data
+## Population data
 
-The package ships with compact SQLite cross-tabulation tables for US and GB geographies. These are sample datasets intended for development, testing, and demonstration. They cover common attribute combinations (age, gender, ethnicity, occupation, postcode, marital status, nationality) and provide realistic relative population counts.
+The quasi-identifier half of the score needs a table of population counts. The package ships a 9-row illustrative sample for US and GB so it works offline. These are not census figures: most real descriptions only partly match them, and a combination missing from the sample scores as population 1. Treat quasi-identifier scores from the bundled tables as a demonstration.
 
-For production use with comprehensive population coverage, consider building fuller cross-tabulations from the freely available census sources:
+For real scores, build a table from person-level microdata, such as the ACS PUMS person file, and pass it in:
 
-- **US**: Census Bureau American Community Survey (ACS) via `data.census.gov`
-- **UK**: ONS Census 2021 via `developer.ons.gov.uk`
+```bash
+reid-score build-db psam_p06.csv ca_2024.sqlite --geography US-CA --preset acs-pums --value-maps occp.json
+reid-score scan notes/*.txt --geography US-CA --population-db ca_2024.sqlite
+```
+
+From Python: `ReidScorer(geography="US-CA", population_db="ca_2024.sqlite")`. [docs/POPULATION_DATA.md](docs/POPULATION_DATA.md) covers the table format, the value vocabulary, the `acs-pums` preset, building from other microdata with a column map, and the limitations of sparse cross-tabs.
 
 ## Testing
 
@@ -278,13 +285,14 @@ src/reid_score/
 │   └── providers/         # rule_based, openai, anthropic, ollama
 ├── demographics/          # Population uniqueness
 │   ├── lookup.py          # SQLite cross-tab queries
-│   └── uniqueness.py      # Uniqueness calculator
+│   ├── uniqueness.py      # Uniqueness and coverage
+│   └── builder.py         # Build population databases from microdata
 ├── risk/                  # Risk scoring
 │   ├── calculator.py      # Score composition
 │   ├── recommendations.py # Mitigation guidance
 │   └── disparity.py       # Disparate impact flags
 ├── reports/               # Compliance reports (GDPR, HIPAA, CCPA)
-├── data/                  # Bundled SQLite demographic databases
+├── data/                  # Bundled illustrative population tables
 │   ├── us/acs_2024.sqlite
 │   └── gb/ons_2021.sqlite
 └── rat_bench/             # RAT-Bench evaluation framework

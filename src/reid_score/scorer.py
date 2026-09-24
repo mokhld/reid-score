@@ -14,7 +14,7 @@ from typing import Any
 
 from reid_score.attacker import AttackEngine
 from reid_score.attacker.engine import provider_for_name, resolve_model
-from reid_score.demographics import DemographicLookup, UniquenessCalculator
+from reid_score.demographics import DemographicLookup, UniquenessCalculator, normalize_geography
 from reid_score.reports import render_ccpa, render_gdpr, render_hipaa
 from reid_score.risk import RecommendationEngine, RiskCalculator, disparity_flags
 from reid_score.types import CompareResult, Rating, ReidConfig, ScoreResult
@@ -32,18 +32,22 @@ class ReidScorer:
         demographic_data: str = "bundled",
         llm_api_key: str | None = None,
         strict: bool = False,
+        population_db: str | None = None,
     ) -> None:
         llm_model = resolve_model(llm_provider, llm_model)
         self.config = ReidConfig(
             llm_provider=llm_provider,
             llm_model=llm_model,
-            geography=geography.upper(),
+            geography=normalize_geography(geography),
             confidence_threshold=confidence_threshold,
             demographic_data=demographic_data,
         )
         provider = provider_for_name(llm_provider, api_key=llm_api_key)
         self.attacker = AttackEngine(provider=provider, model=llm_model, strict=strict)
-        self.lookup = DemographicLookup(geography=geography, data_mode=demographic_data)
+        # Raises ValueError for an unsupported geography or an unusable population_db.
+        self.lookup = DemographicLookup(
+            geography=geography, data_mode=demographic_data, db_path=population_db
+        )
         self.uniqueness = UniquenessCalculator(self.lookup, confidence_threshold)
         self.risk = RiskCalculator(confidence_threshold)
         self.recommendations = RecommendationEngine()
@@ -53,7 +57,9 @@ class ReidScorer:
 
         attack = self.attacker.run(text)
         attributes = attack.attributes
-        uniqueness, population_count, _, confidence_weight = self.uniqueness.compute(attributes)
+        population = self.uniqueness.evaluate(attributes)
+        uniqueness, population_count = population.uniqueness, population.count
+        confidence_weight = population.confidence_weight
         score, rating, direct_ids = self.risk.score(attributes, uniqueness, confidence_weight)
 
         disparate_flags = disparity_flags(attributes, population_count)
@@ -73,6 +79,8 @@ class ReidScorer:
             llm_tokens_used=attack.tokens_used,
             attacker_used=attack.attacker_used,
             fallback_reason=attack.fallback_reason,
+            population_coverage=population.coverage,
+            unmatched_quasi_identifiers=population.unmatched,
         )
 
     def score_batch(self, texts: list[str], concurrency: int = 5) -> list[ScoreResult]:

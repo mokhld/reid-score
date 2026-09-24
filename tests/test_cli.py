@@ -327,5 +327,61 @@ class CLIServeTests(unittest.TestCase):
             self.assertIn("--port", proc.stderr)
 
 
+class CLIPopulationTests(unittest.TestCase):
+    PUMS_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "population_pums_synthetic.csv"
+
+    def test_build_db_then_scan_with_population_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Path(tmpdir) / "ca.sqlite"
+            built = _run_cli(
+                "build-db", str(self.PUMS_FIXTURE), str(db),
+                "--geography", "US-CA", "--preset", "acs-pums",
+            )
+            self.assertEqual(0, built.returncode, built.stderr)
+            self.assertTrue(db.exists())
+
+            text = Path(tmpdir) / "a.txt"
+            text.write_text("A 34 year old woman, married.", encoding="utf-8")
+            proc = _run_cli(
+                "scan", str(text), "--geography", "US-CA",
+                "--population-db", str(db), "--json",
+            )
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        result = json.loads(proc.stdout)["results"][0]
+        self.assertEqual("US-CA", result["geography"])
+        self.assertEqual("full", result["population_coverage"])
+
+    def test_build_db_error_exits_2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proc = _run_cli(
+                "build-db", str(Path(tmpdir) / "missing.csv"),
+                str(Path(tmpdir) / "out.sqlite"), "--geography", "US",
+                "--preset", "acs-pums",
+            )
+        self.assertEqual(2, proc.returncode)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_geography_uk_is_gb_and_unknown_geography_is_clean_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "a.txt"
+            p.write_text("A patient was discharged.", encoding="utf-8")
+            uk = _run_cli("scan", str(p), "--geography", "uk", "--json")
+            fr = _run_cli("scan", str(p), "--geography", "FR")
+        self.assertEqual(0, uk.returncode, uk.stderr)
+        self.assertEqual("GB", json.loads(uk.stdout)["results"][0]["geography"])
+        self.assertEqual(2, fr.returncode)
+        self.assertTrue(fr.stderr.startswith("reid-score: error: Unsupported geography"))
+
+    def test_missing_population_db_is_clean_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "a.txt"
+            p.write_text("A patient was discharged.", encoding="utf-8")
+            proc = _run_cli(
+                "scan", str(p), "--population-db", str(Path(tmpdir) / "none.sqlite")
+            )
+        self.assertEqual(2, proc.returncode)
+        self.assertIn("reid-score: error: Population database not found", proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
