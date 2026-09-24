@@ -157,7 +157,24 @@ Generate compliance reports. Standards: `gdpr`, `hipaa`, `ccpa`. Formats: `json`
 | `anthropic` | None (uses urllib) | No | No | Production attacker realism |
 | `ollama` | None (uses urllib) | Yes (local) | No | Air-gapped environments with local LLMs |
 
-The `rule_based` provider uses regex patterns and keyword matching for: emails, phone numbers, SSNs, UK postcodes, age (with context), gender, 8 occupation types, marital status, employer names, and 4 medical conditions.
+The `rule_based` provider uses regex patterns, keyword lists, and a built-in list of about 500 common first names. What it detects and what it misses:
+
+| Identifier | `rule_based` detects | `rule_based` misses |
+|---|---|---|
+| Email | Any email address | |
+| Phone | US (NANP) and UK formats | Other countries' formats |
+| SSN / NIN | US SSN, UK National Insurance number | Other national ID numbers |
+| Full name | A name after a title or label (Mr, Dr, "Name:", "Patient"), or a common US/UK first name followed by a capitalised surname | Uncommon first names with no title or label, a first name on its own, lowercase names |
+| Street address | House number, street name, and suffix ("42 Elm Street", "1600 Pennsylvania Avenue NW"), PO boxes | Streets without a house number, lowercase or all-caps addresses, non-English formats |
+| Date of birth | Numeric and written dates right after "born", "DOB", "date of birth", "birthday", or "b." | A birth year alone, dates with no birth cue |
+| US ZIP code | After a state name, state code, or "zip"/"postal code" label | Bare 5-digit numbers; ambiguous state codes (MD, PA, OR) without a comma before them |
+| UK postcode | Full uppercase postcodes ("SW1A 1AA") | An outward code alone ("SW1A"), lowercase postcodes |
+| Age, gender, marital status | Explicit mentions ("age 34", "34-year-old", "she", "divorced") | Indirect clues |
+| Occupation, employer | 8 listed occupations (whole words); an employer after "works at" or "employed by" | Other occupations |
+| Medical conditions | Diabetes, cancer, depression, asthma | Other conditions |
+| Ethnicity, religion, sexual orientation | Explicit descriptions of a person ("a Black woman", "is Muslim", "is gay") | Implied membership |
+
+Known false positives include title-case phrases that start with a common first name ("Mark Scheme") and "number + capitalised words + street suffix" phrases ("4 Wheel Drive"). Both err towards flagging risk.
 
 LLM providers can detect a broader range of attributes through natural language understanding. The prompt states the expected value format for each quasi-identifier, and returned values are normalised to the population table's vocabulary (for example `"34"` or `"30s"` becomes `"30-39"`, `"woman"` becomes `"female"`, `"US"` becomes `"american"`). If an LLM provider returns output that cannot be parsed, the engine falls back to `rule_based` and records it in `attacker_used` and `fallback_reason`. Pass `strict=True` (CLI: `--strict`) to raise instead.
 
